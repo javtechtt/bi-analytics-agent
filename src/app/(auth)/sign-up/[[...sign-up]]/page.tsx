@@ -115,13 +115,16 @@ export default function SignUpPage() {
         .cl-footerActionLink:hover {
           color: #06b6d4 !important;
         }
-        /* Hide "Secured by Clerk" and "Development mode" badges */
-        .cl-internal-b3fm6y,
-        .cl-internal-17t0wdf {
+        /* Hide "Secured by Clerk" and "Development mode" — use wildcard
+           to catch Clerk's hashed internal class names across versions */
+        [class*="cl-internal"] {
           display: none !important;
         }
-        /* Match card background to page */
-        .cl-cardBox {
+        /* Make the entire card + footer background uniform */
+        .cl-cardBox,
+        .cl-card,
+        .cl-footer,
+        .cl-card > div:last-child {
           background: transparent !important;
           box-shadow: none !important;
         }
