@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useUser, useClerk } from "@clerk/nextjs";
 import {
   User,
@@ -123,8 +124,8 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
         )} />
       </button>
 
-      {/* Dropdown — fixed position to escape overflow-hidden parent */}
-      {open && (
+      {/* Dropdown — portal to document.body to fully escape stacking contexts */}
+      {open && createPortal(
         <div
           ref={dropdownRef}
           style={{ top: dropdownPos.top, left: dropdownPos.left }}
@@ -243,7 +244,8 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
               <p className="text-xs font-medium text-red-400">Sign out</p>
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
