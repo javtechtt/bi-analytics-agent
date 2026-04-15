@@ -299,15 +299,36 @@ export async function POST(request: Request) {
     );
   }
 
-  // Read output mode from query params
+  // Read output mode and language from query params
   const url = new URL(request.url);
   const validModes = ["executive", "analyst", "sales", "operations"];
   const modeParam = url.searchParams.get("mode") ?? "";
   const mode = validModes.includes(modeParam) ? modeParam : "executive";
-  const modeLens = MODE_LENSES[mode];
-  const instructions = SYSTEM_INSTRUCTIONS + "\n" + modeLens;
+  const lang = url.searchParams.get("lang") ?? "en";
 
-  console.log(`[realtime/session] Mode: ${mode}`);
+  // Each agent mode gets a distinct voice personality
+  const MODE_VOICES: Record<string, string> = {
+    executive: "ash",       // confident, authoritative
+    analyst: "ballad",      // measured, precise
+    sales: "coral",         // energetic, warm
+    operations: "sage",     // calm, steady
+  };
+  const voice = MODE_VOICES[mode] ?? "ash";
+
+  // Language names for system prompt instruction
+  const LANG_NAMES: Record<string, string> = {
+    en: "English", es: "Spanish", fr: "French", de: "German",
+    pt: "Portuguese", zh: "Mandarin Chinese", ja: "Japanese", ar: "Arabic",
+  };
+  const langName = LANG_NAMES[lang] ?? "English";
+
+  const modeLens = MODE_LENSES[mode];
+  const langInstruction = lang !== "en"
+    ? `\n\n## LANGUAGE\nYou MUST speak and respond entirely in ${langName}. All analysis, insights, chart descriptions, and conversation must be in ${langName}. Only column names and data values stay as-is from the dataset.`
+    : "";
+  const instructions = SYSTEM_INSTRUCTIONS + "\n" + modeLens + langInstruction;
+
+  console.log(`[realtime/session] Mode: ${mode}, Voice: ${voice}, Lang: ${lang}`);
 
   const client = new OpenAI();
 
@@ -331,7 +352,7 @@ export async function POST(request: Request) {
             noise_reduction: { type: "near_field" },
             transcription: {
               model: "gpt-4o-mini-transcribe",
-              language: "en",
+              language: lang,
             },
             turn_detection: {
               type: "semantic_vad",
@@ -342,7 +363,7 @@ export async function POST(request: Request) {
           },
           output: {
             format: { type: "audio/pcm", rate: 24000 },
-            voice: "cedar",
+            voice,
             speed: 1.0,
           },
         },

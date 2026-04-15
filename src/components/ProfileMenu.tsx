@@ -21,6 +21,8 @@ interface ProfileMenuProps {
   mode: OutputMode;
   onModeChange: (mode: OutputMode) => void;
   modeDisabled?: boolean;
+  language: string;
+  onLanguageChange: (lang: string) => void;
 }
 
 const AGENT_MODES: Array<{ value: OutputMode; label: string; desc: string; icon: typeof Briefcase }> = [
@@ -41,10 +43,9 @@ const LANGUAGES = [
   { code: "ar", label: "Arabic" },
 ];
 
-export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuProps) {
+export function ProfileMenu({ mode, onModeChange, modeDisabled, language, onLanguageChange }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const [language, setLanguage] = useState("en");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
@@ -215,7 +216,7 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
                   <button
                     key={lang.code}
                     type="button"
-                    onClick={() => { setLanguage(lang.code); setLangOpen(false); }}
+                    onClick={() => { onLanguageChange(lang.code); setLangOpen(false); }}
                     className={cn(
                       "flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors",
                       language === lang.code

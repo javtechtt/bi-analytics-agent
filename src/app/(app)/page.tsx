@@ -29,6 +29,7 @@ export default function Home() {
   const workspace = useWorkspaceContext();
   const [files, setFiles] = useState<UploadedFile[]>(workspace.initialFiles);
   const [mode, setMode] = useState<OutputMode>(workspace.session?.outputMode ?? "executive");
+  const [language, setLanguage] = useState("en");
 
   const {
     orbState,
@@ -47,7 +48,7 @@ export default function Home() {
     sendDrilldown,
     activeDashboard,
     closeDashboard,
-  } = useRealtimeSession(files, mode, {
+  } = useRealtimeSession(files, mode, language, {
     initialMessages: workspace.initialMessages,
     initialCharts: workspace.initialCharts,
     initialDashboard: workspace.initialDashboard,
@@ -171,6 +172,8 @@ export default function Home() {
           mode={mode}
           onModeChange={setMode}
           modeDisabled={sessionStatus === "connected"}
+          language={language}
+          onLanguageChange={setLanguage}
         />
         <SessionStatus status={sessionStatus} />
       </header>

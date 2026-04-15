@@ -177,6 +177,7 @@ export interface RealtimeSessionOptions {
 export function useRealtimeSession(
   files: UploadedFile[],
   mode: OutputMode = "executive",
+  language: string = "en",
   options: RealtimeSessionOptions = {}
 ): UseRealtimeSession {
   const [orbState, setOrbState] = useState<OrbState>("idle");
@@ -639,7 +640,7 @@ export function useRealtimeSession(
 
     try {
       log("lifecycle", "Requesting ephemeral token");
-      const tokenRes = await fetch(`/api/realtime/session?mode=${mode}`, {
+      const tokenRes = await fetch(`/api/realtime/session?mode=${mode}&lang=${language}`, {
         method: "POST",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
