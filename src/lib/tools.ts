@@ -143,6 +143,26 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     type: "function",
+    name: "compare_files",
+    description:
+      "Compare two uploaded files side by side. Call this ONLY when the user explicitly asks to compare, contrast, or combine two specific files. Returns KPI comparison, charts with both datasets overlaid, and compatibility analysis. Do NOT call this for single-file analysis.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name_a: {
+          type: "string",
+          description: "Name of the first file to compare",
+        },
+        file_name_b: {
+          type: "string",
+          description: "Name of the second file to compare",
+        },
+      },
+      required: ["file_name_a", "file_name_b"],
+    },
+  },
+  {
+    type: "function",
     name: "generate_dashboard",
     description:
       "Generate a full executive BI summary dashboard from the active dataset. Automatically selects the best KPIs, charts, insights, risks, and opportunities. Call this when the user asks for an overview, summary, or dashboard of their data. Do NOT call this for specific questions — use run_analysis or create_chart instead.",

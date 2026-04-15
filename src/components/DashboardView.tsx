@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { X, AlertTriangle, TrendingUp, Lightbulb } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { X, AlertTriangle, TrendingUp, Lightbulb, Download } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { KpiCards } from "@/components/KpiCards";
 import { ChartCard } from "@/components/ChartOverlay";
 import { DrilldownChips } from "@/components/DrilldownChips";
+import { exportToPng } from "@/lib/export";
 import type { ChartConfig } from "@/lib/useRealtimeSession";
 import type { KpiCard } from "@/lib/kpi";
 
@@ -38,6 +39,8 @@ interface DashboardViewProps {
 
 export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardViewProps) {
   const [visible, setVisible] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -48,7 +51,17 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
     setTimeout(onClose, 300);
   };
 
-  // Assign IDs to charts if missing
+  const handleDownload = useCallback(async () => {
+    if (!exportRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const slug = dashboard.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "");
+      await exportToPng(exportRef.current, slug || "dashboard");
+    } finally {
+      setExporting(false);
+    }
+  }, [dashboard.title, exporting]);
+
   const chartsWithIds = useMemo(
     () => dashboard.charts.map((c, i) => ({ ...c, id: c.id ?? `dash-chart-${i}` })),
     [dashboard.charts]
@@ -61,30 +74,49 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       )}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-bg-deep/80 backdrop-blur-md" />
 
       {/* Scrollable content */}
       <div className="relative z-10 flex flex-1 flex-col overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-bg-deep/90 px-8 py-4 backdrop-blur-md">
-          <div>
-            <h2 className="text-lg font-bold tracking-wide text-text-primary">
-              {dashboard.title}
-            </h2>
-            <p className="mt-0.5 text-xs text-text-muted">{dashboard.subtitle}</p>
-          </div>
+
+        {/* Toolbar — excluded from export */}
+        <div
+          data-export-hidden
+          className="sticky top-0 z-20 flex items-center justify-end gap-2 border-b border-border-subtle bg-bg-deep/90 px-8 py-3 backdrop-blur-md"
+        >
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={exporting}
+            className={cn(
+              "flex items-center gap-2 rounded-xl border border-border-accent/40 bg-bg-elevated/80 px-4 py-2 text-xs font-medium text-text-primary shadow-lg backdrop-blur-md transition-all duration-200 hover:border-accent-cyan/60 hover:text-accent-cyan",
+              exporting && "opacity-50 cursor-wait"
+            )}
+          >
+            <Download className="h-4 w-4" />
+            {exporting ? "Exporting…" : "Download Dashboard"}
+          </button>
           <button
             type="button"
             onClick={handleClose}
             className="flex items-center gap-2 rounded-xl border border-border-accent/40 bg-bg-elevated/80 px-4 py-2 text-xs font-medium text-text-primary shadow-lg backdrop-blur-md transition-all duration-200 hover:border-red-500/40 hover:bg-red-950/40 hover:text-red-300"
           >
             <X className="h-4 w-4" />
-            Close Dashboard
+            Close
           </button>
         </div>
 
-        <div className="mx-auto w-full max-w-7xl px-6 py-6">
+        {/* ── Export area: everything below here is captured ── */}
+        <div ref={exportRef} className="mx-auto w-full max-w-7xl px-8 py-8">
+
+          {/* Dashboard title — included in export */}
+          <div className="mb-8">
+            <h2 className="text-xl font-bold tracking-wide text-text-primary">
+              {dashboard.title}
+            </h2>
+            <p className="mt-1 text-sm text-text-muted">{dashboard.subtitle}</p>
+          </div>
+
           {/* KPI row */}
           {dashboard.kpis.length > 0 && (
             <section className="mb-8">
@@ -125,7 +157,6 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
 
           {/* Insights + Risks + Opportunities panels */}
           <section className="mb-8 grid gap-4 md:grid-cols-3">
-            {/* Insights */}
             {dashboard.insights.length > 0 && (
               <div className="glass rounded-2xl p-5">
                 <div className="mb-3 flex items-center gap-2">
@@ -145,7 +176,6 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
               </div>
             )}
 
-            {/* Risks */}
             {dashboard.risks.length > 0 && (
               <div className="glass rounded-2xl border-red-500/10 p-5">
                 <div className="mb-3 flex items-center gap-2">
@@ -165,7 +195,6 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
               </div>
             )}
 
-            {/* Opportunities */}
             {dashboard.opportunities.length > 0 && (
               <div className="glass rounded-2xl border-emerald-500/10 p-5">
                 <div className="mb-3 flex items-center gap-2">
@@ -186,9 +215,9 @@ export function DashboardView({ dashboard, onClose, onDrilldown }: DashboardView
             )}
           </section>
 
-          {/* Drill-down suggestions */}
+          {/* Drill-down chips — excluded from export */}
           {dashboard.drilldowns.length > 0 && (
-            <section className="mb-8">
+            <section className="mb-8" data-export-hidden>
               <DrilldownChips suggestions={dashboard.drilldowns} onSelect={onDrilldown} />
             </section>
           )}

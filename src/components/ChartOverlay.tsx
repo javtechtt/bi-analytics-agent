@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { X } from "lucide-react";
+import { useMemo, useRef, useCallback, useState } from "react";
+import { X, Download, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatLabel } from "@/lib/labels";
+import { exportToPng } from "@/lib/export";
 import type { ChartConfig } from "@/lib/useRealtimeSession";
 import {
   BarChart,
@@ -114,6 +115,7 @@ function yAxisProps(chart: ChartConfig) {
 // ── Chart renderers ──────────────────────────────────────
 
 function renderBar(chart: ChartConfig, series: string[]) {
+  const cid = chart.id ?? "";
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={chart.data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
@@ -123,7 +125,7 @@ function renderBar(chart: ChartConfig, series: string[]) {
         <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(34,211,238,0.04)" }} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: AXIS_COLOR }} />}
         {series.map((key, i) => (
-          <Bar key={key} dataKey={key} name={key} fill={CHART_COLORS[i % CHART_COLORS.length]}
+          <Bar key={`${cid}-${key}`} dataKey={key} name={key} fill={CHART_COLORS[i % CHART_COLORS.length]}
             fillOpacity={0.85} radius={[4, 4, 0, 0]} animationDuration={800} animationBegin={100 + i * 100} />
         ))}
       </BarChart>
@@ -132,6 +134,7 @@ function renderBar(chart: ChartConfig, series: string[]) {
 }
 
 function renderLine(chart: ChartConfig, series: string[]) {
+  const cid = chart.id ?? "";
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={chart.data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
@@ -141,7 +144,7 @@ function renderLine(chart: ChartConfig, series: string[]) {
         <Tooltip content={<ChartTooltip />} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: AXIS_COLOR }} />}
         {series.map((key, i) => (
-          <Line key={key} type="monotone" dataKey={key} name={key}
+          <Line key={`${cid}-${key}`} type="monotone" dataKey={key} name={key}
             stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2.5}
             dot={{ fill: CHART_COLORS[i % CHART_COLORS.length], r: 3, strokeWidth: 0 }}
             activeDot={{ r: 5, stroke: "#fff", strokeWidth: 1 }}
@@ -153,12 +156,13 @@ function renderLine(chart: ChartConfig, series: string[]) {
 }
 
 function renderArea(chart: ChartConfig, series: string[]) {
+  const cid = chart.id ?? "";
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={chart.data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
         <defs>
           {series.map((key, i) => (
-            <linearGradient key={key} id={`areaGrad-${chart.id}-${i}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient key={`${cid}-grad-${key}`} id={`areaGrad-${cid}-${i}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.25} />
               <stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0} />
             </linearGradient>
@@ -170,9 +174,9 @@ function renderArea(chart: ChartConfig, series: string[]) {
         <Tooltip content={<ChartTooltip />} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 11, color: AXIS_COLOR }} />}
         {series.map((key, i) => (
-          <Area key={key} type="monotone" dataKey={key} name={key}
+          <Area key={`${cid}-${key}`} type="monotone" dataKey={key} name={key}
             stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2}
-            fill={`url(#areaGrad-${chart.id}-${i})`}
+            fill={`url(#areaGrad-${cid}-${i})`}
             animationDuration={1000} animationBegin={100 + i * 150} />
         ))}
       </AreaChart>
@@ -226,6 +230,15 @@ function renderScatter(chart: ChartConfig) {
 
 export function ChartCard({ chart, focused, onClose, onFocus }: ChartCardProps) {
   const series = useMemo(() => detectSeries(chart), [chart]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [showData, setShowData] = useState(false);
+
+  const handleDownload = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!cardRef.current) return;
+    const slug = chart.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "");
+    await exportToPng(cardRef.current, slug || "chart");
+  }, [chart.title]);
 
   const renderers: Record<string, (c: ChartConfig, s: string[]) => React.ReactNode> = {
     bar: renderBar, line: renderLine, area: renderArea, pie: renderPie,
@@ -235,6 +248,7 @@ export function ChartCard({ chart, focused, onClose, onFocus }: ChartCardProps) 
 
   return (
     <div
+      ref={cardRef}
       onClick={!focused ? onFocus : undefined}
       className={cn(
         "glass flex h-full flex-col overflow-hidden rounded-2xl transition-all duration-500 ease-out",
@@ -251,20 +265,57 @@ export function ChartCard({ chart, focused, onClose, onFocus }: ChartCardProps) 
         )}>
           {chart.title}
         </h3>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="rounded p-1 text-text-muted transition-colors hover:text-red-400"
-          aria-label="Close chart"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1" data-export-hidden>
+          {focused && (
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="rounded p-1 text-text-muted transition-colors hover:text-accent-cyan"
+              aria-label="Download chart as PNG"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="rounded p-1 text-text-muted transition-colors hover:text-red-400"
+            aria-label="Close chart"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
-      {/* Chart body — min-h ensures ResponsiveContainer gets a real pixel height */}
+      {/* Chart body */}
       <div className="relative min-h-0 flex-1 p-3">
         {renderChart(chart, series)}
       </div>
+
+      {/* Data verification footer */}
+      {(chart.coverage || chart.dataSummary) && (
+        <div className="shrink-0 border-t border-border-subtle" data-export-hidden>
+          {/* Coverage + toggle */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowData((v) => !v); }}
+            className="flex w-full items-center justify-between px-4 py-1.5 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+          >
+            <span>{chart.coverage ?? "Source data"}</span>
+            {chart.dataSummary && (
+              showData
+                ? <ChevronUp className="h-3 w-3" />
+                : <ChevronDown className="h-3 w-3" />
+            )}
+          </button>
+          {/* Collapsible data table */}
+          {showData && chart.dataSummary && (
+            <pre className="max-h-32 overflow-y-auto border-t border-border-subtle bg-bg-deep/50 px-4 py-2 font-mono text-[10px] leading-relaxed text-text-muted">
+              {chart.dataSummary}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
