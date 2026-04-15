@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import {
   User,
@@ -44,14 +44,28 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [language, setLanguage] = useState("en");
-  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const { user } = useUser();
   const { signOut } = useClerk();
+
+  // Position dropdown below trigger using fixed positioning (escapes overflow-hidden)
+  const updatePosition = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 8, left: rect.left });
+    }
+  }, []);
 
   // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setOpen(false);
         setLangOpen(false);
       }
@@ -76,11 +90,12 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
   const currentLang = LANGUAGES.find((l) => l.code === language)!;
 
   return (
-    <div ref={menuRef} className="relative">
+    <>
       {/* Trigger button */}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => { setOpen((v) => !v); setLangOpen(false); }}
+        onClick={() => { setOpen((v) => { if (!v) updatePosition(); return !v; }); setLangOpen(false); }}
         className={cn(
           "flex items-center gap-2.5 rounded-xl border px-3 py-2 transition-all duration-200",
           open
@@ -108,9 +123,12 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
         )} />
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown — fixed position to escape overflow-hidden parent */}
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-border-subtle bg-bg-surface/95 shadow-[0_8px_40px_rgba(0,0,0,0.5),0_0_60px_var(--glow-cyan)] backdrop-blur-xl">
+        <div
+          ref={dropdownRef}
+          style={{ top: dropdownPos.top, left: dropdownPos.left }}
+          className="fixed z-[100] w-72 overflow-hidden rounded-2xl border border-border-subtle bg-bg-surface/95 shadow-[0_8px_40px_rgba(0,0,0,0.5),0_0_60px_var(--glow-cyan)] backdrop-blur-xl">
 
           {/* User identity */}
           <div className="border-b border-border-subtle px-4 py-3.5">
@@ -227,6 +245,6 @@ export function ProfileMenu({ mode, onModeChange, modeDisabled }: ProfileMenuPro
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
