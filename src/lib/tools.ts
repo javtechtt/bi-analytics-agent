@@ -79,46 +79,82 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     type: "function",
-    name: "generate_visual",
+    name: "create_chart",
     description:
-      "Generate a chart/graph specification that will be rendered live in the UI. Use this whenever the user asks to see, visualize, chart, graph, or plot data. Always call run_analysis first to get the data, then call this to visualize it.",
+      "Render a chart from the uploaded dataset. The backend builds the chart data — you only specify WHAT to chart, not the data itself. Call this automatically whenever a visual would help. Do NOT pass raw data arrays — just specify the metric and grouping columns.",
     parameters: {
       type: "object",
       properties: {
         chart_type: {
           type: "string",
-          enum: ["bar", "line", "pie", "area", "scatter"],
+          enum: ["bar", "line", "pie", "scatter"],
           description:
-            "The type of chart. Use bar for comparisons, line for trends over time, area for cumulative trends, scatter for correlations between two variables, pie ONLY when showing parts of a whole with few categories.",
+            "bar: comparing categories. line: trends over time. pie: parts of a whole (≤7 categories). scatter: correlation between two numeric columns.",
         },
         title: {
           type: "string",
-          description: "Chart title",
+          description: "Short chart title",
         },
-        data: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string", description: "Category or x-axis label" },
-              value: { type: "number", description: "Primary value for single-series charts" },
-            },
-            required: ["label"],
-            additionalProperties: true,
-          },
+        metric: {
+          type: "string",
           description:
-            "Array of data points. For single-series: use {label, value}. For multi-series (e.g. revenue vs profit): use {label, revenue: 100, profit: 25} and set the 'series' parameter.",
+            "The numeric column(s) to measure. For a single metric: 'Revenue'. For multi-series comparison: 'Revenue,Profit' (comma-separated). The chart will render one line/bar per metric.",
         },
-        series: {
-          type: "array",
-          items: { type: "string" },
+        group_by: {
+          type: "string",
           description:
-            "Names of the numeric fields to plot as separate series. E.g. ['revenue', 'profit'] will render two lines/bars. If omitted, defaults to ['value'].",
+            "The column to group/categorize by (x-axis). E.g. 'Region', 'Month', 'Product'.",
         },
-        x_label: { type: "string", description: "X-axis label" },
-        y_label: { type: "string", description: "Y-axis label" },
+        aggregation: {
+          type: "string",
+          enum: ["sum", "count", "avg", "min", "max"],
+          description:
+            "How to aggregate each metric within each group. Defaults to 'sum'. Use 'count' to count occurrences.",
+        },
+        split_by: {
+          type: "string",
+          description:
+            "Optional column to split into multiple lines/bars. Each unique value becomes its own colored series. E.g. split_by='Campaign' with group_by='Month' and metric='Revenue' shows one line per campaign over time.",
+        },
+        filter: {
+          type: "string",
+          description:
+            "Optional filter in format 'column:value' to chart a subset. E.g. 'Region:West' or 'Year:2024'.",
+        },
       },
-      required: ["chart_type", "title", "data"],
+      required: ["chart_type", "title", "metric", "group_by"],
+    },
+  },
+  {
+    type: "function",
+    name: "recommend_actions",
+    description:
+      "Generate actionable business recommendations with impact projections. Call this when the user asks 'what should I do?', 'how can I improve?', 'what's the best move?', or wants strategic advice. Returns prioritized actions with revenue/profit impact estimates and strategy comparisons.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: {
+          type: "string",
+          description: "The name of the file to analyze for recommendations",
+        },
+      },
+      required: ["file_name"],
+    },
+  },
+  {
+    type: "function",
+    name: "generate_dashboard",
+    description:
+      "Generate a full executive BI summary dashboard from the active dataset. Automatically selects the best KPIs, charts, insights, risks, and opportunities. Call this when the user asks for an overview, summary, or dashboard of their data. Do NOT call this for specific questions — use run_analysis or create_chart instead.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: {
+          type: "string",
+          description: "The name of the file to build the dashboard from",
+        },
+      },
+      required: ["file_name"],
     },
   },
 ];
@@ -145,6 +181,6 @@ export function executeClientTool(
     }
 
     default:
-      return null; // Route to server
+      return null;
   }
 }

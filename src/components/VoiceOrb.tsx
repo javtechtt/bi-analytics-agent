@@ -6,9 +6,7 @@ import type { OrbState } from "@/lib/types";
 
 interface VoiceOrbProps {
   state: OrbState;
-  size?: number; // px diameter of the canvas
   label?: string;
-  intensity?: number; // 0–1
   onClick?: () => void;
 }
 
@@ -170,17 +168,13 @@ const EDGE_PAIRS: [number, number][] = [];
 
 export function VoiceOrb({
   state,
-  size = 420,
   label,
-  intensity = 0.5,
   onClick,
 }: VoiceOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const stateRef = useRef(state);
-  const intensityRef = useRef(intensity);
   stateRef.current = state;
-  intensityRef.current = intensity;
 
   // Smoothly interpolated params for transitions
   const liveParams = useRef<StateParams>({ ...STATE_PARAMS[state] });
@@ -298,25 +292,23 @@ export function VoiceOrb({
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex flex-col items-center gap-5 focus:outline-none"
+      className="group relative flex w-full max-w-[420px] flex-col items-center gap-5 focus:outline-none"
       aria-label={displayLabel}
     >
       {/* Outer glow ring — CSS, always present */}
       <div
         className={cn(
-          "absolute rounded-full transition-all duration-700 pointer-events-none",
+          "absolute inset-0 rounded-full transition-all duration-700 pointer-events-none",
           state === "idle" && "shadow-[0_0_60px_var(--glow-cyan),0_0_120px_rgba(34,211,238,0.04)]",
           state === "listening" && "shadow-[0_0_80px_var(--glow-cyan-strong),0_0_160px_var(--glow-cyan)]",
           state === "thinking" && "shadow-[0_0_80px_var(--glow-indigo-strong),0_0_160px_var(--glow-indigo)]",
           state === "speaking" && "shadow-[0_0_90px_var(--glow-indigo-strong),0_0_180px_var(--glow-cyan)]",
         )}
-        style={{ width: size, height: size, top: 0, left: 0 }}
       />
 
       <canvas
         ref={canvasRef}
-        className="cursor-pointer rounded-full"
-        style={{ width: size, height: size }}
+        className="aspect-square w-full cursor-pointer rounded-full"
       />
 
       {/* Label */}

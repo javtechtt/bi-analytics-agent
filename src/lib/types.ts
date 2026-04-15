@@ -1,5 +1,7 @@
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
+export type OutputMode = "executive" | "analyst" | "sales" | "operations";
+
 export type MessageRole = "user" | "assistant";
 
 export interface Message {
@@ -30,6 +32,8 @@ export interface ParsedData {
   rows: ParsedRow[];
   /** Total row count (may differ from rows.length if sampled) */
   totalRows: number;
+  /** How the data was extracted: "positional" (PDF coordinates), "heuristic" (text patterns), "none" (no tables found) */
+  extractionMethod?: "positional" | "heuristic" | "none";
 }
 
 export interface UploadedFile {

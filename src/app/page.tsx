@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { Starfield } from "@/components/Starfield";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { SessionStatus } from "@/components/SessionStatus";
 import { TranscriptOverlay } from "@/components/TranscriptOverlay";
-import { ChartOverlay } from "@/components/ChartOverlay";
+import { ChartStage } from "@/components/ChartStage";
+import { DashboardView } from "@/components/DashboardView";
+import { ModeSelector } from "@/components/ModeSelector";
 import { useRealtimeSession } from "@/lib/useRealtimeSession";
-import type { UploadedFile } from "@/lib/types";
+import { selectKpis } from "@/lib/kpi";
+import type { UploadedFile, OutputMode } from "@/lib/types";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -24,6 +27,7 @@ function isSupportedFile(name: string): boolean {
 
 export default function Home() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [mode, setMode] = useState<OutputMode>("executive");
 
   const {
     orbState,
@@ -34,9 +38,16 @@ export default function Home() {
     sendFileContext,
     isConnecting,
     error,
-    activeChart,
-    clearChart,
-  } = useRealtimeSession(files);
+    charts,
+    focusedChartId,
+    removeChart,
+    clearCharts,
+    focusChart,
+    drilldowns,
+    sendDrilldown,
+    activeDashboard,
+    closeDashboard,
+  } = useRealtimeSession(files, mode);
 
   const handleOrbClick = useCallback(() => {
     if (sessionStatus === "connected") {
@@ -56,7 +67,6 @@ export default function Home() {
       );
       if (incoming.length === 0) return;
 
-      // Create placeholder entries in "parsing" state
       const entries: UploadedFile[] = incoming.map((f) => ({
         id: crypto.randomUUID(),
         name: f.name,
@@ -68,7 +78,6 @@ export default function Home() {
 
       setFiles((prev) => [...prev, ...entries]);
 
-      // Parse each file and inject into session
       for (let i = 0; i < incoming.length; i++) {
         const file = incoming[i];
         const entry = entries[i];
@@ -83,9 +92,7 @@ export default function Home() {
           });
 
           if (!res.ok) {
-            const { error: errMsg } = (await res.json()) as {
-              error: string;
-            };
+            const { error: errMsg } = (await res.json()) as { error: string };
             throw new Error(errMsg);
           }
 
@@ -95,7 +102,6 @@ export default function Home() {
             parsedData?: import("@/lib/types").ParsedData;
           };
 
-          // Update file entry to "ready" with both text and structured data
           setFiles((prev) =>
             prev.map((f) =>
               f.id === entry.id
@@ -104,12 +110,15 @@ export default function Home() {
             )
           );
 
-          // If session is live, inject the file context
           if (sessionStatus === "connected") {
             sendFileContext(file.name, text);
           }
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Parse failed";
+          const raw = err instanceof Error ? err.message : "Parse failed";
+          const msg = raw.includes("too large")
+            ? raw
+            : "Couldn't read this file. Try a different format.";
+          console.error("[upload]", file.name, raw);
           setFiles((prev) =>
             prev.map((f) =>
               f.id === entry.id
@@ -134,6 +143,13 @@ export default function Home() {
         ? "Connecting…"
         : undefined;
 
+  // Compute KPI cards from the most recent ready file's parsed data
+  const kpiCards = useMemo(() => {
+    const readyFile = [...files].reverse().find((f) => f.status === "ready" && f.parsedData);
+    if (!readyFile?.parsedData) return [];
+    return selectKpis(readyFile.parsedData);
+  }, [files]);
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       <Starfield />
@@ -145,7 +161,14 @@ export default function Home() {
             BI Analyst
           </h1>
         </div>
-        <SessionStatus status={sessionStatus} />
+        <div className="flex items-center gap-3">
+          <ModeSelector
+            mode={mode}
+            onChange={setMode}
+            disabled={sessionStatus === "connected"}
+          />
+          <SessionStatus status={sessionStatus} />
+        </div>
       </header>
 
       <DocumentPanel
@@ -154,27 +177,41 @@ export default function Home() {
         onRemove={handleRemove}
       />
 
-      <div className="relative z-10 flex flex-1 items-center justify-center">
+      <div className="relative z-10 flex flex-1 items-center justify-center px-6">
         <VoiceOrb
           state={isConnecting ? "thinking" : orbState}
-          size={420}
-          intensity={orbState === "speaking" ? 0.85 : 0.5}
           label={orbLabel}
           onClick={handleOrbClick}
         />
       </div>
 
       {error && (
-        <div className="absolute bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-lg bg-red-500/10 px-4 py-2 text-xs text-red-300 backdrop-blur-sm">
+        <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 rounded-xl border border-red-500/20 bg-red-950/60 px-5 py-2.5 text-xs text-red-200 shadow-lg backdrop-blur-md">
           {error}
         </div>
       )}
 
       <TranscriptOverlay messages={messages} />
 
-      {/* Chart overlay — appears when assistant generates a visual */}
-      {activeChart && (
-        <ChartOverlay chart={activeChart} onClose={clearChart} />
+      {/* Multi-chart stage — focused chart centered, supporting charts below */}
+      <ChartStage
+        charts={charts}
+        focusedChartId={focusedChartId}
+        drilldowns={drilldowns}
+        kpiCards={kpiCards}
+        onRemove={removeChart}
+        onFocus={focusChart}
+        onClearAll={clearCharts}
+        onDrilldown={sendDrilldown}
+      />
+
+      {/* AI-generated dashboard */}
+      {activeDashboard && (
+        <DashboardView
+          dashboard={activeDashboard}
+          onClose={closeDashboard}
+          onDrilldown={sendDrilldown}
+        />
       )}
     </div>
   );
