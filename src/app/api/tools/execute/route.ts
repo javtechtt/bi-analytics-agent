@@ -1,3 +1,5 @@
+import { auth } from "@clerk/nextjs/server";
+
 type Row = Record<string, string | number | null>;
 
 interface ParsedData {
@@ -1214,6 +1216,11 @@ async function executeToolLogic(
 // ── Route handler ────────────────────────────────────────
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!checkRateLimit()) {
     console.warn("[tools/execute] Rate limit exceeded");
     return Response.json(

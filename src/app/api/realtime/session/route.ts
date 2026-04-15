@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { TOOL_DEFINITIONS } from "@/lib/tools";
+import { auth } from "@clerk/nextjs/server";
 
 // ── Output mode lenses ──────────────────────────────────
 
@@ -285,6 +286,11 @@ Do NOT stay silent. Do NOT list what you can do. Just be present and ready.
 `;
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!process.env.OPENAI_API_KEY) {
     console.error("[realtime/session] OPENAI_API_KEY is not configured");
     return Response.json(

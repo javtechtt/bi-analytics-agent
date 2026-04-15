@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { auth } from "@clerk/nextjs/server";
 
 const MAX_TEXT_LENGTH = 8000;
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -399,6 +400,11 @@ async function parsePDF(buffer: Buffer, name: string): Promise<ParseResult> {
 // ── Route handler ────────────────────────────────────────
 
 export async function POST(request: Request) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
