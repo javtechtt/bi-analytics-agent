@@ -191,7 +191,18 @@ function analyzeTrends(data: ParsedData, timeCol: string | null, primaryMetric: 
 
 // ── Anomaly Detection (seasonality-aware) ────────────────
 
-const ANOMALY_ZSCORE_THRESHOLD = 2.0; // 2σ — industry standard for BI anomaly detection
+/** Adaptive anomaly threshold based on sample size.
+ *  For small samples (n<30), uses approximate t-distribution critical values
+ *  at the 95% two-tailed level. For large samples, converges to ~2.0 (z-score).
+ *  This prevents small datasets from producing too many false anomalies. */
+function anomalyThreshold(n: number): number {
+  if (n <= 5) return 2.78;  // t(4, 0.025) ≈ 2.78
+  if (n <= 8) return 2.45;  // t(7, 0.025) ≈ 2.36
+  if (n <= 12) return 2.28; // t(11, 0.025) ≈ 2.20
+  if (n <= 20) return 2.15; // t(19, 0.025) ≈ 2.09
+  if (n <= 30) return 2.05; // t(29, 0.025) ≈ 2.04
+  return 2.0;               // z ≈ 1.96, rounded to 2.0
+}
 
 function detectAnomalies(data: ParsedData, timeCol: string | null, primaryMetric: string | null): StructuredInsight[] {
   const results: StructuredInsight[] = [];
@@ -206,6 +217,8 @@ function detectAnomalies(data: ParsedData, timeCol: string | null, primaryMetric
 
   if (stdDev === 0) return results;
 
+  const ANOMALY_THRESHOLD = anomalyThreshold(values.length);
+
   const metricName = formatLabel(primaryMetric);
 
   // Detect seasonality — suppress anomalies that fall on seasonal cycle positions
@@ -215,7 +228,7 @@ function detectAnomalies(data: ParsedData, timeCol: string | null, primaryMetric
     const point = series[idx];
     const zScore = (point.value - mean) / stdDev;
 
-    if (Math.abs(zScore) <= ANOMALY_ZSCORE_THRESHOLD) continue;
+    if (Math.abs(zScore) <= ANOMALY_THRESHOLD) continue;
 
     // If data is seasonal, check if this point falls on a seasonal cycle position
     // A point at index i is "seasonal" if similar deviations occur at i ± cycleLength
@@ -227,7 +240,7 @@ function detectAnomalies(data: ParsedData, timeCol: string | null, primaryMetric
         if (compareIdx >= 0 && compareIdx < values.length) {
           const compareZScore = (values[compareIdx] - mean) / stdDev;
           // Same direction and both above threshold → seasonal, not anomalous
-          if (zScore * compareZScore > 0 && Math.abs(compareZScore) > ANOMALY_ZSCORE_THRESHOLD * 0.7) {
+          if (zScore * compareZScore > 0 && Math.abs(compareZScore) > ANOMALY_THRESHOLD * 0.7) {
             isSeasonalPattern = true;
             break;
           }

@@ -24,14 +24,14 @@ interface KpiDefinition {
 
 const KPI_CATALOG: KpiDefinition[] = [
   {
-    label: "Revenue",
-    candidates: ["gross_revenue", "net_revenue", "revenue", "total_revenue", "sales", "total_sales", "income", "turnover", "amount", "total_amount"],
+    label: "Gross Profit",
+    candidates: ["gross_profit", "profit", "net_profit", "earnings", "net_income"],
     aggregation: "sum",
     priority: 1,
   },
   {
-    label: "Gross Profit",
-    candidates: ["gross_profit", "profit", "net_profit", "earnings", "margin"],
+    label: "Revenue",
+    candidates: ["gross_revenue", "net_revenue", "revenue", "total_revenue", "sales", "total_sales", "income", "turnover", "amount", "total_amount"],
     aggregation: "sum",
     priority: 2,
   },
@@ -115,9 +115,10 @@ function findColumn(candidates: string[], dataColumns: string[]): string | null 
     if (exact) return exact;
   }
   for (const candidate of candidates) {
-    // Partial match
-    const partial = dataColumns.find((c) => c.toLowerCase().includes(candidate));
-    if (partial) return partial;
+    // Partial match — only accept if unambiguous (exactly one column matches)
+    const matches = dataColumns.filter((c) => c.toLowerCase().includes(candidate));
+    if (matches.length === 1) return matches[0];
+    // If multiple matches, skip this candidate and try the next one (more specific candidates first)
   }
   return null;
 }
@@ -149,6 +150,30 @@ function computeKpi(
   }
 }
 
+/** Extract a sortable numeric value from period strings like "Q1 2024", "2024-Q3", "Jan 2025", etc. */
+function parseNumericPeriod(s: string): number | null {
+  // "2024" → 2024
+  if (/^\d{4}$/.test(s.trim())) return parseInt(s.trim(), 10);
+  // "2024-01", "2024/03" → 2024.01
+  const ymd = s.match(/(\d{4})[\-\/](\d{1,2})/);
+  if (ymd) return parseInt(ymd[1], 10) + parseInt(ymd[2], 10) / 100;
+  // "Q1 2024", "Q3-2024" → 2024.1
+  const qy = s.match(/Q(\d)\s*[\-\/]?\s*(\d{4})/i) ?? s.match(/(\d{4})\s*[\-\/]?\s*Q(\d)/i);
+  if (qy) {
+    const parts = s.match(/Q(\d)/i);
+    const year = s.match(/(\d{4})/);
+    if (parts && year) return parseInt(year[1], 10) + parseInt(parts[1], 10) / 10;
+  }
+  // "Jan 2024", "March 2025"
+  const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+  const my = s.match(/([a-zA-Z]+)\s*(\d{4})/);
+  if (my) {
+    const mi = months.findIndex((m) => my[1].toLowerCase().startsWith(m));
+    if (mi >= 0) return parseInt(my[2], 10) + (mi + 1) / 100;
+  }
+  return null;
+}
+
 // ── Main: select KPIs from a dataset ─────────────────────
 
 export function selectKpis(data: ParsedData, maxCards = 6): KpiCard[] {
@@ -168,13 +193,20 @@ export function selectKpis(data: ParsedData, maxCards = 6): KpiCard[] {
 
   if (timeCol) {
     const timeValues = [...new Set(data.rows.map((r) => String(r[timeCol] ?? "")))].filter(Boolean);
-    // Order by appearance in data
-    const orderMap = new Map<string, number>();
-    for (const row of data.rows) {
-      const t = String(row[timeCol] ?? "");
-      if (t && !orderMap.has(t)) orderMap.set(t, orderMap.size);
-    }
-    const ordered = timeValues.sort((a, b) => (orderMap.get(a) ?? 0) - (orderMap.get(b) ?? 0));
+
+    // Try to sort chronologically by parsing as dates; fall back to natural string sort
+    const ordered = timeValues.sort((a, b) => {
+      const da = Date.parse(a);
+      const db = Date.parse(b);
+      // Both valid dates → sort chronologically
+      if (!isNaN(da) && !isNaN(db)) return da - db;
+      // One or both not parseable → try numeric extraction (e.g., "Q1 2024" → 2024.1)
+      const na = parseNumericPeriod(a);
+      const nb = parseNumericPeriod(b);
+      if (na !== null && nb !== null) return na - nb;
+      // Fall back to locale string comparison
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
 
     if (ordered.length >= 2) {
       const lastPeriod = ordered[ordered.length - 1];

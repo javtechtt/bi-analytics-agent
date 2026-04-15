@@ -90,10 +90,12 @@ function groupSums(data: ParsedData, groupCol: string, metricCol: string): Array
     .sort((a, b) => b.total - a.total);
 }
 
-/** Linear regression slope — actual rate of change per period */
-function computeSlope(values: number[]): { slope: number; rSquared: number } {
+/** Linear regression slope with prediction interval data.
+ *  Returns slope, R², and standard error of residuals for computing
+ *  data-grounded uncertainty bands instead of arbitrary multipliers. */
+function computeSlope(values: number[]): { slope: number; rSquared: number; stdError: number; n: number } {
   const n = values.length;
-  if (n < 3) return { slope: 0, rSquared: 0 };
+  if (n < 3) return { slope: 0, rSquared: 0, stdError: 0, n };
   const xMean = (n - 1) / 2;
   const yMean = values.reduce((a, b) => a + b, 0) / n;
   let num = 0, den = 0, ssRes = 0, ssTot = 0;
@@ -109,7 +111,22 @@ function computeSlope(values: number[]): { slope: number; rSquared: number } {
     ssTot += (values[i] - yMean) ** 2;
   }
   const rSquared = ssTot === 0 ? 0 : 1 - ssRes / ssTot;
-  return { slope, rSquared };
+  // Standard error of residuals: sqrt(SSres / (n - 2))
+  const stdError = n > 2 ? Math.sqrt(ssRes / (n - 2)) : 0;
+  return { slope, rSquared, stdError, n };
+}
+
+/** Compute prediction interval half-width for a future period.
+ *  Uses t-approximation: t * SE * sqrt(1 + 1/n + (h-xMean)²/Sxx)
+ *  where h is the forecast horizon index. */
+function predictionInterval(n: number, stdError: number, periodsAhead: number, den: number): number {
+  // t-value approximation for 80% prediction interval (conservative)
+  // For small n, use larger t; for large n, converges to ~1.28
+  const tValue = n <= 5 ? 1.5 : n <= 10 ? 1.4 : n <= 20 ? 1.33 : 1.28;
+  const xMean = (n - 1) / 2;
+  const h = n - 1 + periodsAhead; // forecast point index
+  const leverageTerm = 1 + 1 / n + (h - xMean) ** 2 / Math.max(den, 1);
+  return tValue * stdError * Math.sqrt(leverageTerm);
 }
 
 // ── Data quality gate ────────────────────────────────────
@@ -152,10 +169,11 @@ function actionsFromTrend(
   if (!timeCol) return [];
 
   const series = periodicSums(data, timeCol, primaryMetric);
-  if (series.length < 3) return [];
+  // Require at least 6 periods for statistically meaningful trend projections
+  if (series.length < 6) return [];
 
   const values = series.map((s) => s.value);
-  const { slope, rSquared } = computeSlope(values);
+  const { slope, rSquared, stdError, n } = computeSlope(values);
   const metricName = formatLabel(primaryMetric);
   const lastValue = values[values.length - 1];
   const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
@@ -165,13 +183,16 @@ function actionsFromTrend(
   const isDecline = slope < 0;
   const periodsAhead = 3;
 
-  // Project forward using actual slope
+  // Project forward using actual slope with data-derived uncertainty bands
   const projectedChange = slope * periodsAhead;
-  const projectedLow = projectedChange * 0.7; // 30% uncertainty band
-  const projectedHigh = projectedChange * 1.3;
-
-  const absLow = Math.abs(projectedLow);
-  const absHigh = Math.abs(projectedHigh);
+  // Compute Sxx (sum of squared x-deviations) for prediction interval
+  const xMean = (n - 1) / 2;
+  const sxx = Array.from({ length: n }, (_, i) => (i - xMean) ** 2).reduce((a, b) => a + b, 0);
+  const piHalfWidth = predictionInterval(n, stdError, periodsAhead, sxx);
+  // Uncertainty band: projected change ± prediction interval, clamped to non-negative
+  const absProjected = Math.abs(projectedChange);
+  const absLow = Math.max(0, absProjected - piHalfWidth);
+  const absHigh = absProjected + piHalfWidth;
 
   if (isDecline) {
     // Decline: action is to reverse the trend
@@ -182,6 +203,7 @@ function actionsFromTrend(
       expectedOutcome: `Reversing this trend over ${periodsAhead} periods could recover ${formatKpiValue(absLow)}–${formatKpiValue(absHigh)}.`,
       assumptions: [
         `Based on linear trend of ${formatKpiValue(Math.abs(slope))} per period decline.`,
+        `Uncertainty range derived from regression residuals (±${formatKpiValue(piHalfWidth)}).`,
         `Assumes the decline can be halted and partially reversed.`,
         `R² of ${rSquared.toFixed(2)} — ${rSquared > 0.7 ? "strong trend fit" : rSquared > 0.4 ? "moderate trend fit" : "weak trend fit, treat with caution"}.`,
       ],
@@ -198,13 +220,14 @@ function actionsFromTrend(
   return [{
     title: `Sustain ${metricName} growth trajectory`,
     explanation: `${insight.observation} Current growth rate is ~${formatKpiValue(slope)} per period.`,
-    expectedOutcome: `Maintaining this trajectory projects ${formatKpiValue(projectedLow)}–${formatKpiValue(projectedHigh)} additional ${metricName} over ${periodsAhead} periods.`,
+    expectedOutcome: `Maintaining this trajectory projects ${formatKpiValue(absLow)}–${formatKpiValue(absHigh)} additional ${metricName} over ${periodsAhead} periods.`,
     assumptions: [
       `Based on observed growth of ${formatKpiValue(slope)} per period.`,
+      `Uncertainty range derived from regression residuals (±${formatKpiValue(piHalfWidth)}).`,
       `Assumes current conditions continue — no market disruption or seasonal shift.`,
       `R² of ${rSquared.toFixed(2)} — ${rSquared > 0.7 ? "strong fit" : "moderate fit"}.`,
     ],
-    revenueImpact: { low: projectedLow, high: projectedHigh, description: `+${formatKpiValue(projectedLow)}–${formatKpiValue(projectedHigh)} projected` },
+    revenueImpact: { low: absLow, high: absHigh, description: `+${formatKpiValue(absLow)}–${formatKpiValue(absHigh)} projected` },
     riskLevel: "low",
     confidence: rSquared > 0.6 ? "medium" : "low",
     priority: Math.min(rSquared * 60 + 20, 80),
@@ -236,38 +259,53 @@ function actionsFromAnomaly(
     ? anomalyValues.reduce((sum, v) => sum + Math.abs(v - mean), 0) / anomalyValues.length
     : stdDev;
 
+  // Data-derived recurrence rate: what fraction of periods show similar-direction deviations?
+  // This replaces the old arbitrary 0.5–0.8 multipliers with actual historical persistence.
+  const spikeCount = values.filter((v) => v - mean > stdDev * 1.0).length;
+  const dropCount = values.filter((v) => mean - v > stdDev * 1.0).length;
+  const totalPeriods = values.length;
+  const spikeRecurrenceRate = spikeCount / totalPeriods; // e.g., 3 spikes in 12 periods = 0.25
+  const dropRecurrenceRate = dropCount / totalPeriods;
+
   if (isSpike) {
+    // Low/high range: recurrence rate ± half (bounded 10%–90%)
+    const rateLow = Math.max(0.1, spikeRecurrenceRate * 0.5);
+    const rateHigh = Math.min(0.9, spikeRecurrenceRate * 1.5);
     return [{
       title: `Investigate and replicate the ${metricName} spike`,
       explanation: `${insight.observation} The spike was ~${formatKpiValue(anomalyMagnitude)} above the period average of ${formatKpiValue(mean)}.`,
-      expectedOutcome: `If replicable, each occurrence could add ~${formatKpiValue(anomalyMagnitude * 0.5)}–${formatKpiValue(anomalyMagnitude * 0.8)} above baseline.`,
+      expectedOutcome: `If replicable, each occurrence could add ~${formatKpiValue(anomalyMagnitude * rateLow)}–${formatKpiValue(anomalyMagnitude * rateHigh)} above baseline.`,
       assumptions: [
         `Spike magnitude: ${formatKpiValue(anomalyMagnitude)} above average.`,
-        `Assumes 50–80% of the spike is replicable (not a one-time event).`,
+        `Historical recurrence: ${spikeCount} of ${totalPeriods} periods showed similar spikes (${(spikeRecurrenceRate * 100).toFixed(0)}%).`,
+        `Impact range derived from observed recurrence rate (${(rateLow * 100).toFixed(0)}–${(rateHigh * 100).toFixed(0)}%).`,
         `Requires identifying the root cause first.`,
       ],
-      revenueImpact: { low: anomalyMagnitude * 0.5, high: anomalyMagnitude * 0.8, description: `+${formatKpiValue(anomalyMagnitude * 0.5)}–${formatKpiValue(anomalyMagnitude * 0.8)} per recurrence` },
+      revenueImpact: { low: anomalyMagnitude * rateLow, high: anomalyMagnitude * rateHigh, description: `+${formatKpiValue(anomalyMagnitude * rateLow)}–${formatKpiValue(anomalyMagnitude * rateHigh)} per recurrence` },
       riskLevel: "medium",
-      confidence: "low",
-      priority: 55,
+      confidence: spikeRecurrenceRate > 0.2 ? "medium" : "low",
+      priority: Math.min(spikeRecurrenceRate * 100 + 40, 70),
       sourceInsight: insight.observation,
     }];
   }
 
   // Drop
+  const rateLow = Math.max(0.1, dropRecurrenceRate * 0.5);
+  const rateHigh = Math.min(1.0, dropRecurrenceRate * 1.5 + 0.3); // drops are more preventable
   return [{
     title: `Prevent future ${metricName} drops`,
     explanation: `${insight.observation} The drop was ~${formatKpiValue(anomalyMagnitude)} below the period average.`,
-    expectedOutcome: `Preventing recurrence preserves ~${formatKpiValue(anomalyMagnitude * 0.6)}–${formatKpiValue(anomalyMagnitude)} per period.`,
+    expectedOutcome: `Preventing recurrence preserves ~${formatKpiValue(anomalyMagnitude * rateLow)}–${formatKpiValue(anomalyMagnitude * rateHigh)} per period.`,
     assumptions: [
       `Drop magnitude: ${formatKpiValue(anomalyMagnitude)} below average.`,
-      `Assumes 60–100% of the drop is preventable.`,
+      `Historical recurrence: ${dropCount} of ${totalPeriods} periods showed similar drops (${(dropRecurrenceRate * 100).toFixed(0)}%).`,
+      `Impact range derived from observed recurrence rate.`,
       `Requires root cause identification.`,
     ],
-    revenueImpact: { low: anomalyMagnitude * 0.6, high: anomalyMagnitude, description: `Preserved ${formatKpiValue(anomalyMagnitude * 0.6)}–${formatKpiValue(anomalyMagnitude)}` },
+    revenueImpact: { low: anomalyMagnitude * rateLow, high: anomalyMagnitude * rateHigh, description: `Preserved ${formatKpiValue(anomalyMagnitude * rateLow)}–${formatKpiValue(anomalyMagnitude * rateHigh)}` },
     riskLevel: "medium",
-    confidence: "low",
-    priority: 60,
+    confidence: dropRecurrenceRate > 0.2 ? "medium" : "low",
+    priority: Math.min(dropRecurrenceRate * 100 + 45, 75),
     sourceInsight: insight.observation,
   }];
 }
@@ -411,21 +449,23 @@ function actionsFromOpportunity(
       const avgPerUnit = g.total / Math.max(g.count, 1);
       const overallAvg = total / Math.max(data.rows.length, 1);
 
-      // Realistic growth: double this segment's count at its current per-unit value
-      const growthPotential = avgPerUnit * g.count; // current value
-      const scaledValue = avgPerUnit * g.count * 0.5; // 50% growth in volume
+      // Additional revenue from 50% volume growth = 50% of current segment total
+      const incrementFrom50PctGrowth = g.total * 0.5;
+      // Range: 25-50% growth (conservative to optimistic)
+      const incrementLow = g.total * 0.25;
+      const incrementHigh = incrementFrom50PctGrowth;
 
       return [{
         title: `Scale "${g.group}" segment`,
         explanation: `${insight.observation} "${g.group}" is ${(share * 100).toFixed(0)}% of ${metricName} but has ${((avgPerUnit / overallAvg - 1) * 100).toFixed(0)}% higher per-transaction value.`,
-        expectedOutcome: `Growing "${g.group}" volume by 50% at current per-unit value adds ~${formatKpiValue(scaledValue)}.`,
+        expectedOutcome: `Growing "${g.group}" volume by 25–50% at current per-unit value (${formatKpiValue(avgPerUnit)}) adds ~${formatKpiValue(incrementLow)}–${formatKpiValue(incrementHigh)}.`,
         assumptions: [
           `Current "${g.group}" value: ${formatKpiValue(g.total)} from ${g.count} transactions.`,
           `Per-transaction average: ${formatKpiValue(avgPerUnit)} vs overall ${formatKpiValue(overallAvg)}.`,
-          `Assumes 50% volume growth is achievable through targeted effort.`,
+          `Range reflects 25% (conservative) to 50% (optimistic) volume growth.`,
           `Assumes per-unit value holds at current levels.`,
         ],
-        revenueImpact: { low: scaledValue * 0.6, high: scaledValue, description: `+${formatKpiValue(scaledValue * 0.6)}–${formatKpiValue(scaledValue)}` },
+        revenueImpact: { low: incrementLow, high: incrementHigh, description: `+${formatKpiValue(incrementLow)}–${formatKpiValue(incrementHigh)} from segment growth` },
         riskLevel: "low",
         confidence: "medium",
         priority: Math.min((avgPerUnit / overallAvg) * 40 + 30, 75),
@@ -607,6 +647,14 @@ export function formatDecisionsForAssistant(output: DecisionOutput): string {
     lines.push(`⚠ DATA QUALITY WARNING: ${output.dataQualityWarning}`);
     lines.push("Do NOT present projections as reliable. Explain the limitation clearly.");
     return lines.join("\n");
+  }
+
+  // Check if recommendations are predominantly low confidence
+  const allActions = [output.topRecommendation, ...output.alternatives];
+  const lowConfCount = allActions.filter((a) => a.confidence === "low").length;
+  if (lowConfCount > allActions.length / 2) {
+    lines.push("⚠ CAUTION: These recommendations are based on limited or noisy data. Treat as directional signals, not precise projections. Say so when presenting them.");
+    lines.push("");
   }
 
   lines.push("=== DECISION RECOMMENDATIONS (source of truth — speak these numbers) ===");
