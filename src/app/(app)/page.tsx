@@ -5,7 +5,6 @@ import { VoiceOrb } from "@/components/VoiceOrb";
 import { Starfield } from "@/components/Starfield";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { SessionStatus } from "@/components/SessionStatus";
-import { TranscriptOverlay } from "@/components/TranscriptOverlay";
 import { ChartStage } from "@/components/ChartStage";
 import { DashboardView } from "@/components/DashboardView";
 import { ProfileMenu } from "@/components/ProfileMenu";
@@ -34,7 +33,6 @@ export default function Home() {
   const {
     orbState,
     sessionStatus,
-    messages,
     connect,
     disconnect,
     sendFileContext,
@@ -196,8 +194,6 @@ export default function Home() {
           {error}
         </div>
       )}
-
-      <TranscriptOverlay messages={messages} />
 
       {/* Multi-chart stage — focused chart centered, supporting charts below */}
       <ChartStage
