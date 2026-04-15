@@ -8,8 +8,7 @@ import { SessionStatus } from "@/components/SessionStatus";
 import { TranscriptOverlay } from "@/components/TranscriptOverlay";
 import { ChartStage } from "@/components/ChartStage";
 import { DashboardView } from "@/components/DashboardView";
-import { ModeSelector } from "@/components/ModeSelector";
-import { AuthShell } from "@/components/AuthShell";
+import { ProfileMenu } from "@/components/ProfileMenu";
 import { useWorkspaceContext } from "@/components/WorkspaceProvider";
 import { useRealtimeSession } from "@/lib/useRealtimeSession";
 import { selectKpis } from "@/lib/kpi";
@@ -170,21 +169,12 @@ export default function Home() {
       <Starfield />
 
       <header className="relative z-10 flex items-center justify-between px-6 py-3">
-        <div className="flex items-center gap-3">
-          <div className="h-2 w-2 rounded-full bg-accent-cyan shadow-[0_0_8px_var(--glow-cyan)]" />
-          <h1 className="text-sm font-semibold tracking-wide text-text-primary">
-            BI Analyst
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <ModeSelector
-            mode={mode}
-            onChange={setMode}
-            disabled={sessionStatus === "connected"}
-          />
-          <SessionStatus status={sessionStatus} />
-          <AuthShell />
-        </div>
+        <ProfileMenu
+          mode={mode}
+          onModeChange={setMode}
+          modeDisabled={sessionStatus === "connected"}
+        />
+        <SessionStatus status={sessionStatus} />
       </header>
 
       <DocumentPanel
