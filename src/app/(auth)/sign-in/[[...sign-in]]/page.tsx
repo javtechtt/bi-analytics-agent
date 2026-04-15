@@ -129,8 +129,15 @@ export default function SignInPage() {
           color: #06b6d4 !important;
         }
         /* Hide dev mode badge or style it subtly */
-        .cl-internal-b3fm6y {
-          opacity: 0.5;
+        /* Hide "Secured by Clerk" and "Development mode" badges */
+        .cl-internal-b3fm6y,
+        .cl-internal-17t0wdf {
+          display: none !important;
+        }
+        /* Match card background to page */
+        .cl-cardBox {
+          background: transparent !important;
+          box-shadow: none !important;
         }
       `}</style>
 
