@@ -147,6 +147,10 @@ export default function Home() {
 
   const handleRemove = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    // Delete from Supabase so it doesn't reappear on reload
+    fetch(`/api/workspace/files/${id}`, { method: "DELETE" }).catch((err) =>
+      console.error("[workspace] File delete failed:", err)
+    );
   }, []);
 
   const orbLabel =
