@@ -204,6 +204,10 @@ export function useRealtimeSession(
   const pendingCallRef = useRef<PendingFunctionCall | null>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const langRef = useRef(language);
+  langRef.current = language;
 
   // ── Response lifecycle tracking ────────────────────────
   // Prevents "conversation_already_has_active_response" errors
@@ -640,7 +644,7 @@ export function useRealtimeSession(
 
     try {
       log("lifecycle", "Requesting ephemeral token");
-      const tokenRes = await fetch(`/api/realtime/session?mode=${mode}&lang=${language}`, {
+      const tokenRes = await fetch(`/api/realtime/session?mode=${modeRef.current}&lang=${langRef.current}`, {
         method: "POST",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });

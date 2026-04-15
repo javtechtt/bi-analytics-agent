@@ -324,7 +324,7 @@ export async function POST(request: Request) {
 
   const modeLens = MODE_LENSES[mode];
   const langInstruction = lang !== "en"
-    ? `\n\n## LANGUAGE\nYou MUST speak and respond entirely in ${langName}. All analysis, insights, chart descriptions, and conversation must be in ${langName}. Only column names and data values stay as-is from the dataset.`
+    ? `\n\n## LANGUAGE — CRITICAL OVERRIDE\nYou MUST speak and respond ENTIRELY in ${langName}. This is non-negotiable.\n- Your greeting MUST be in ${langName}.\n- All analysis, insights, chart descriptions, numbers commentary, and conversation MUST be in ${langName}.\n- Proactive suggestions and drill-down prompts MUST be in ${langName}.\n- Only raw column names and data values from the dataset stay in their original form.\n- Do NOT mix English into your responses. Speak ${langName} naturally and fluently as a native speaker would.`
     : "";
   const instructions = SYSTEM_INSTRUCTIONS + "\n" + modeLens + langInstruction;
 
