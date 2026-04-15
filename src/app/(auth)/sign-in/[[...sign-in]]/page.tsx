@@ -128,18 +128,22 @@ export default function SignInPage() {
         .cl-footerActionLink:hover {
           color: #06b6d4 !important;
         }
-        /* Hide "Secured by Clerk" and "Development mode" — use wildcard
-           to catch Clerk's hashed internal class names across versions */
-        [class*="cl-internal"] {
+        /* Hide "Secured by Clerk" badge and "Development mode" banner.
+           These are rendered as siblings/children of the card footer.
+           Target by position: any element after the footer action row. */
+        .cl-footer > :not(.cl-footerAction) {
           display: none !important;
         }
-        /* Make the entire card + footer background uniform */
-        .cl-cardBox,
-        .cl-card,
-        .cl-footer,
-        .cl-card > div:last-child {
-          background: transparent !important;
+        /* Also catch the dev mode banner that sits outside the footer */
+        .cl-rootBox > div:last-child:not(.cl-card):not(.cl-cardBox) {
+          display: none !important;
+        }
+        /* Uniform card background — footer matches the card body */
+        .cl-cardBox {
           box-shadow: none !important;
+        }
+        .cl-footer {
+          background: transparent !important;
         }
       `}</style>
 
