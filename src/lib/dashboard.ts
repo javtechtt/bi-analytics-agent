@@ -66,30 +66,54 @@ function findCategoryColumns(data: ParsedData, exclude: string[]): string[] {
 
 // ── Primary metric detection ─────────────────────────────
 
-const REVENUE_CANDIDATES = ["gross_revenue", "net_revenue", "revenue", "sales", "total_sales", "income", "amount"];
-const PROFIT_CANDIDATES = ["gross_profit", "profit", "net_profit", "earnings"];
+// Profit first — revenue is vanity, profit is reality.
+// Every business cares about profit. Revenue is context, profit is the outcome.
+export const PROFIT_CANDIDATES = ["gross_profit", "profit", "net_profit", "earnings", "net_income"];
+export const REVENUE_CANDIDATES = ["gross_revenue", "net_revenue", "revenue", "sales", "total_sales", "income", "amount"];
 
-function findPrimaryMetric(data: ParsedData): string | null {
-  const lower = data.columns.map((c) => c.toLowerCase());
-  for (const candidate of REVENUE_CANDIDATES) {
+/** Find the best column from a candidate list. Returns null if not found. */
+function matchCandidate(candidates: string[], lower: string[], columns: string[]): string | null {
+  for (const candidate of candidates) {
     const idx = lower.indexOf(candidate);
-    if (idx >= 0) return data.columns[idx];
-    const partial = lower.findIndex((c) => c.includes(candidate));
-    if (partial >= 0) return data.columns[partial];
+    if (idx >= 0) return columns[idx];
   }
-  // Fallback: first numeric column
+  // Partial match only if unambiguous
+  for (const candidate of candidates) {
+    const matches = lower.map((c, i) => c.includes(candidate) ? i : -1).filter((i) => i >= 0);
+    if (matches.length === 1) return columns[matches[0]];
+  }
+  return null;
+}
+
+/** Primary metric: profit first, then revenue, then first numeric column. */
+export function findPrimaryMetric(data: ParsedData): string | null {
+  const lower = data.columns.map((c) => c.toLowerCase());
+  // 1. Profit — the metric that matters most to business users
+  const profit = matchCandidate(PROFIT_CANDIDATES, lower, data.columns);
+  if (profit) return profit;
+  // 2. Revenue — if no profit column, revenue is the next best
+  const revenue = matchCandidate(REVENUE_CANDIDATES, lower, data.columns);
+  if (revenue) return revenue;
+  // 3. Fallback: first numeric column
   return data.columns.find((c) => data.columnTypes[c] === "numeric") ?? null;
 }
 
-function findSecondaryMetric(data: ParsedData, primary: string): string | null {
+/** Secondary metric: whichever of profit/revenue wasn't picked as primary. */
+export function findSecondaryMetric(data: ParsedData, primary: string): string | null {
   const lower = data.columns.map((c) => c.toLowerCase());
-  for (const candidate of PROFIT_CANDIDATES) {
-    const idx = lower.indexOf(candidate);
-    if (idx >= 0 && data.columns[idx] !== primary) return data.columns[idx];
-    const partial = lower.findIndex((c) => c.includes(candidate));
-    if (partial >= 0 && data.columns[partial] !== primary) return data.columns[partial];
+  const primaryLower = primary.toLowerCase();
+  // If primary is profit → secondary is revenue
+  if (PROFIT_CANDIDATES.some((c) => primaryLower.includes(c))) {
+    return matchCandidate(REVENUE_CANDIDATES, lower, data.columns.filter((c) => c !== primary));
   }
-  return null;
+  // If primary is revenue → secondary is profit
+  if (REVENUE_CANDIDATES.some((c) => primaryLower.includes(c))) {
+    return matchCandidate(PROFIT_CANDIDATES, lower, data.columns.filter((c) => c !== primary));
+  }
+  // If primary is neither → check profit first, then revenue
+  const profit = matchCandidate(PROFIT_CANDIDATES, lower, data.columns.filter((c) => c !== primary));
+  if (profit) return profit;
+  return matchCandidate(REVENUE_CANDIDATES, lower, data.columns.filter((c) => c !== primary));
 }
 
 // ── Insight generation ───────────────────────────────────
