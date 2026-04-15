@@ -15,14 +15,29 @@ function truncate(text: string, max = MAX_TEXT_LENGTH): string {
 // ── Type inference ───────────────────────────────────────
 
 function inferColumnType(values: unknown[]): "numeric" | "text" | "date" {
+  // Sample at least min(1000, 10%) of the dataset — not just the first rows
+  const sampleSize = Math.min(1000, Math.max(100, Math.ceil(values.length * 0.1)));
+  let sample: unknown[];
+
+  if (values.length <= sampleSize) {
+    sample = values;
+  } else {
+    // Random sample to avoid first-row bias
+    sample = [];
+    const step = values.length / sampleSize;
+    for (let i = 0; i < sampleSize; i++) {
+      sample.push(values[Math.floor(i * step)]);
+    }
+  }
+
   let numericCount = 0;
   let dateCount = 0;
   let sampleCount = 0;
 
-  for (const v of values.slice(0, 100)) {
+  for (const v of sample) {
     if (v == null || String(v).trim() === "") continue;
     sampleCount++;
-    const s = String(v).trim().replace(/,/g, ""); // strip formatting commas
+    const s = String(v).trim().replace(/,/g, "");
     if (!isNaN(Number(s)) && s !== "") numericCount++;
     if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) dateCount++;
   }
@@ -53,7 +68,31 @@ interface ParseResult {
     columnTypes: Record<string, "numeric" | "text" | "date">;
     rows: Row[];
     totalRows: number;
+    extractionMethod?: "positional" | "heuristic" | "none";
   };
+}
+
+// ── Column name sanitization ─────────────────────────────
+
+const SAFE_COLUMN_PATTERN = /^[a-zA-Z0-9_\s\-\.\/%()\[\]]+$/;
+
+function sanitizeColumnName(raw: string): string {
+  const trimmed = raw.replace(/\s+/g, " ").trim();
+  if (SAFE_COLUMN_PATTERN.test(trimmed)) return trimmed;
+  // Strip unsafe characters, keep alphanumeric + basic punctuation
+  return trimmed.replace(/[^a-zA-Z0-9_\s\-\.\/%()\[\]]/g, "").trim() || "unnamed";
+}
+
+function sanitizeValue(val: unknown): string {
+  if (val == null) return "";
+  const s = String(val);
+  // Escape characters that could be interpreted as prompt directives
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, " ")
+    .replace(/\r/g, "")
+    .slice(0, 500); // Cap individual cell length
 }
 
 function buildTextPreview(
@@ -64,16 +103,19 @@ function buildTextPreview(
   totalRows: number,
   sheetName?: string
 ): string {
+  const safeColumns = columns.map(sanitizeColumnName);
+
   const header = sheetName
-    ? `--- Sheet: ${sheetName} (${totalRows} rows) ---`
-    : `File: ${name}\nType: ${fileType}\nColumns: ${columns.join(", ")}\nTotal rows: ${totalRows}`;
+    ? `Sheet: ${sanitizeValue(sheetName)} (${totalRows} rows)`
+    : `File: ${sanitizeValue(name)}\nType: ${fileType}\nColumns: ${safeColumns.join(", ")}\nTotal rows: ${totalRows}`;
 
   const preview = rows.slice(0, MAX_PREVIEW_ROWS);
   const previewText = preview
     .map((row) =>
-      columns.map((c) => {
-        const v = row[c];
-        return `${c}: ${v ?? ""}`;
+      safeColumns.map((c, i) => {
+        const origCol = columns[i];
+        const v = row[origCol];
+        return `${c}: ${sanitizeValue(v)}`;
       }).join(" | ")
     )
     .join("\n");
@@ -187,21 +229,170 @@ function parseExcel(buffer: Buffer, name: string): ParseResult {
   };
 }
 
+// ── Column normalization / business alias mapping ────────
+
+const COLUMN_ALIASES: Record<string, string[]> = {
+  revenue: ["revenue", "gross revenue", "total revenue", "sales revenue", "sales", "gross sales", "total sales", "income", "turnover"],
+  net_revenue: ["net revenue", "net sales", "net income"],
+  profit: ["profit", "gross profit", "net profit", "net income", "earnings", "margin"],
+  cost: ["cost", "total cost", "costs", "expense", "expenses", "cogs", "cost of goods"],
+  quantity: ["quantity", "qty", "units", "units sold", "unit sold", "volume", "count"],
+  price: ["price", "unit price", "selling price", "avg price", "average price"],
+  discount: ["discount", "discount rate", "disc", "rebate"],
+  category: ["category", "product category", "item category", "type", "product type", "segment"],
+  product: ["product", "product name", "item", "item name", "sku"],
+  region: ["region", "area", "territory", "location", "geography", "geo"],
+  date: ["date", "order date", "sale date", "transaction date", "period"],
+  month: ["month", "months"],
+  quarter: ["quarter", "qtr"],
+  year: ["year", "fiscal year", "fy"],
+  customer: ["customer", "customer name", "client", "buyer", "account"],
+};
+
+function normalizeColumnName(raw: string): string {
+  const cleaned = raw
+    .replace(/[^\w\s]/g, "") // remove punctuation
+    .replace(/\s+/g, " ")   // collapse whitespace
+    .trim()
+    .toLowerCase();
+
+  // Check each alias group
+  for (const [canonical, aliases] of Object.entries(COLUMN_ALIASES)) {
+    if (aliases.includes(cleaned)) {
+      // Return a clean title-cased version
+      return canonical.charAt(0).toUpperCase() + canonical.slice(1).replace(/_/g, " ");
+    }
+  }
+
+  // No alias match — just clean up the original
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function normalizeColumns(
+  columns: string[],
+  columnTypes: Record<string, "numeric" | "text" | "date">,
+  rows: Row[]
+): { columns: string[]; columnTypes: Record<string, "numeric" | "text" | "date">; rows: Row[] } {
+  const nameMap: Record<string, string> = {};
+  const newColumns: string[] = [];
+  const newTypes: Record<string, "numeric" | "text" | "date"> = {};
+
+  for (const col of columns) {
+    let normalized = normalizeColumnName(col);
+    // Deduplicate
+    if (newColumns.includes(normalized)) {
+      normalized = `${normalized} (${col})`;
+    }
+    nameMap[col] = normalized;
+    newColumns.push(normalized);
+    newTypes[normalized] = columnTypes[col] ?? "text";
+  }
+
+  // Check if any names actually changed
+  const changed = columns.some((c) => nameMap[c] !== c);
+  if (!changed) return { columns, columnTypes, rows };
+
+  // Remap rows
+  const newRows = rows.map((r) => {
+    const newRow: Row = {};
+    for (const col of columns) {
+      newRow[nameMap[col]] = r[col];
+    }
+    return newRow;
+  });
+
+  console.log("[normalize] Column mapping:", nameMap);
+  return { columns: newColumns, columnTypes: newTypes, rows: newRows };
+}
+
 // ── PDF parser ───────────────────────────────────────────
 
 async function parsePDF(buffer: Buffer, name: string): Promise<ParseResult> {
-  const { extractText, getDocumentProxy } = await import("unpdf");
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
-  const { text: rawText } = await extractText(pdf, { mergePages: true });
+  const { extractTablesFromItems } = await import("@/lib/pdf-table-extractor");
+  const { getDocumentProxy, extractText } = await import("unpdf");
+
+  const pdfData = new Uint8Array(buffer);
+  const pdf = await getDocumentProxy(pdfData);
   const pageCount = pdf.numPages;
+
+  // Phase 1: collect positioned text items from each page (done here, not in extractor)
+  const items: Array<{ str: string; x: number; y: number; width: number; height: number; page: number }> = [];
+
+  for (let p = 1; p <= pageCount; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    for (const item of content.items) {
+      if (!("str" in item) || !item.str || item.str.trim() === "") continue;
+      const t = item.transform as number[];
+      if (Math.abs(t[1]) > 0.1 || Math.abs(t[2]) > 0.1) continue; // skip rotated
+
+      items.push({
+        str: item.str.trim(),
+        x: t[4],
+        y: t[5],
+        width: item.width,
+        height: item.height,
+        page: p,
+      });
+    }
+  }
+
+  console.log(`[pdf-parse] ${name}: ${items.length} positioned text items from ${pageCount} pages`);
+
+  // Phase 2-5: extract tables from positioned items (pure data, no pdfjs imports)
+  const tables = extractTablesFromItems(items);
+
+  if (tables.length > 0 && tables[0].confidence > 0.2) {
+    const best = tables[0];
+
+    const rawTypes: Record<string, "numeric" | "text" | "date"> = {};
+    for (const col of best.columns) {
+      rawTypes[col] = inferColumnType(best.rows.map((r) => r[col]));
+    }
+
+    const { columns, columnTypes, rows } = normalizeColumns(best.columns, rawTypes, best.rows);
+
+    const coercedRows = rows.map((r) => {
+      const row: Row = {};
+      for (const col of columns) {
+        row[col] = coerceValue(r[col], columnTypes[col]);
+      }
+      return row;
+    });
+
+    await pdf.destroy();
+
+    const text = truncate(
+      buildTextPreview(name, "PDF (table extracted)", columns, coercedRows, coercedRows.length)
+    );
+
+    const summary = `${name} — PDF with ${pageCount} page(s), ${coercedRows.length} rows extracted, ${columns.length} columns (${columns.slice(0, 5).join(", ")}${columns.length > 5 ? "…" : ""})`;
+
+    console.log(`[pdf-parse] ${name}: extracted ${columns.length} columns, ${coercedRows.length} rows (confidence: ${best.confidence.toFixed(2)})`);
+    console.log(`[pdf-parse] Columns: ${columns.join(", ")}`);
+    if (coercedRows.length > 0) {
+      console.log(`[pdf-parse] Sample row:`, coercedRows[0]);
+    }
+
+    return {
+      text,
+      summary,
+      parsedData: { columns, columnTypes, rows: coercedRows, totalRows: coercedRows.length, extractionMethod: "positional" },
+    };
+  }
+
+  // Fallback: no table detected — return raw text for context
+  const { text: rawText } = await extractText(pdf, { mergePages: true });
   await pdf.destroy();
 
   const cleaned = rawText.replace(/\s+/g, " ").trim();
+  console.log(`[pdf-parse] ${name}: no tables detected (${tables.length} candidates, best confidence: ${tables[0]?.confidence.toFixed(2) ?? "n/a"})`);
 
   return {
     text: truncate(`File: ${name}\nType: PDF\nPages: ${pageCount}\n\nContent:\n${cleaned}`),
-    summary: `${name} — PDF with ${pageCount} page(s), ${cleaned.split(/\s+/).length} words`,
-    parsedData: { columns: [], columnTypes: {}, rows: [], totalRows: 0 },
+    summary: `${name} — PDF with ${pageCount} page(s), text extracted (no data tables found)`,
+    parsedData: { columns: [], columnTypes: {}, rows: [], totalRows: 0, extractionMethod: "none" },
   };
 }
 
