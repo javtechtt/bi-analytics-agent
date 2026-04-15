@@ -111,7 +111,7 @@ export default function Home() {
           );
 
           if (sessionStatus === "connected") {
-            sendFileContext(file.name, text);
+            sendFileContext(file.name, text, parsedData);
           }
         } catch (err) {
           const raw = err instanceof Error ? err.message : "Parse failed";

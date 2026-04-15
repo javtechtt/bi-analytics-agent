@@ -23,7 +23,8 @@ function computeConfidence(
   data: ParsedData,
   metricCol?: string,
   groupCol?: string,
-  wasAutoResolved?: boolean
+  wasAutoResolved?: boolean,
+  aggregationCoverage?: { validRows: number; totalRows: number; skippedRows: number }
 ): ConfidenceResult {
   let score = 0;
   const factors: string[] = [];
@@ -93,7 +94,19 @@ function computeConfidence(
     score += 0.15;
   }
 
-  score = Math.min(score, 1);
+  // 6. Aggregation coverage penalty — if many rows were skipped during computation
+  if (aggregationCoverage && aggregationCoverage.totalRows > 0) {
+    const skipRatio = aggregationCoverage.skippedRows / aggregationCoverage.totalRows;
+    if (skipRatio > 0.3) {
+      score -= 0.20;
+      factors.push(`${(skipRatio * 100).toFixed(0)}% of rows excluded during aggregation — results may not represent the full dataset`);
+    } else if (skipRatio > 0.1) {
+      score -= 0.10;
+      factors.push(`${(skipRatio * 100).toFixed(0)}% of rows excluded during aggregation`);
+    }
+  }
+
+  score = Math.min(Math.max(score, 0), 1);
 
   let level: ConfidenceLevel;
   let guidance: string;
@@ -123,6 +136,20 @@ function formatConfidenceForAssistant(conf: ConfidenceResult): string {
   return lines.join("\n");
 }
 
+/** Returns an error string if confidence is too low for the given tool, or null if OK. */
+function checkConfidenceGate(conf: ConfidenceResult, tool: string): string | null {
+  // profile_dataset and run_analysis are exploratory — always allowed (but confidence is still reported)
+  if (tool === "profile_dataset" || tool === "run_analysis" || tool === "list_uploaded_files") return null;
+
+  // Charts, dashboards, recommendations, and comparisons require at least medium confidence
+  if (conf.level === "low") {
+    return `Data quality is too low for reliable ${tool === "create_chart" ? "charting" : "analysis"} (confidence: ${(conf.score * 100).toFixed(0)}%).\n`
+      + `Issues: ${conf.factors.join("; ")}.\n`
+      + `Suggest the user upload cleaner data, use a different metric, or call profile_dataset to investigate data quality.`;
+  }
+  return null;
+}
+
 // ── Column resolution ────────────────────────────────────
 
 // ── Semantic alias groups for metric resolution ──────────
@@ -135,23 +162,26 @@ const METRIC_ALIASES: Record<string, string[]> = {
 };
 
 function resolveColumn(col: string, data: ParsedData): string | null {
-  // Exact match
+  // 1. Exact match
   if (data.columns.includes(col)) return col;
-  // Case-insensitive match
+  // 2. Case-insensitive exact match
   const ciMatch = data.columns.find((c) => c.toLowerCase() === col.toLowerCase());
   if (ciMatch) return ciMatch;
-  // Partial match
-  const partial = data.columns.find((c) => c.toLowerCase().includes(col.toLowerCase()));
-  if (partial) return partial;
-  // Reverse partial (column name contains query)
-  const reverse = data.columns.find((c) => col.toLowerCase().includes(c.toLowerCase()) && c.length > 2);
-  if (reverse) return reverse;
-
-  // Semantic alias resolution: "money" → best revenue-like column
+  // 3. Partial match — column name contains the query (e.g., "revenue" matches "gross_revenue")
+  //    SAFETY: Only accept if there is exactly ONE match. Multiple matches = ambiguous = return null.
   const colLower = col.toLowerCase();
+  const partials = data.columns.filter((c) => c.toLowerCase().includes(colLower));
+  if (partials.length === 1) return partials[0];
+  if (partials.length > 1) {
+    // Ambiguous — do NOT silently pick one. Return null so the caller gets an error with available columns.
+    console.log(`[resolve] Ambiguous partial match for "${col}" — refusing to guess. Candidates: [${partials.join(", ")}]`);
+    return null;
+  }
+
+  // 4. Semantic alias resolution: "money" → best revenue-like column
   for (const [concept, aliases] of Object.entries(METRIC_ALIASES)) {
-    // Check if the query matches a concept or an alias
-    const isMatch = concept === colLower || aliases.some((a) => a === colLower || colLower.includes(a) || a.includes(colLower));
+    // Check if the query matches a concept or an alias (exact match only, no substring)
+    const isMatch = concept === colLower || aliases.some((a) => a === colLower);
     if (isMatch) {
       // Find a column in the dataset that matches any alias in this group
       for (const alias of aliases) {
@@ -297,11 +327,15 @@ function runAnalysis(data: ParsedData, fileName: string, args: AnalysisArgs): st
       }
 
       const { results, totalRows, validRows, skippedRows } = computeGroupBy(data.rows, groupCol!, aggCol, agg);
-      const output = results.slice(0, 25).map((r: GroupByResult) => `  ${r.group}: ${r.value.toFixed(2)}`).join("\n");
+      const nullGroups = results.filter((r) => r.value == null).length;
+      const output = results.slice(0, 25).map((r: GroupByResult) => `  ${r.group}: ${r.value != null ? r.value.toFixed(2) : "(no data)"}`).join("\n");
       const coverage = skippedRows > 0
         ? `\n\nData coverage: ${validRows} of ${totalRows} rows used. ${skippedRows} rows had non-numeric values and were excluded.`
         : "";
-      return withConfidence(`Group by: ${groupCol}\nAggregation: ${agg}${aggCol ? ` of ${aggCol}` : ""}\nGroups: ${results.length}\n\n${output}${coverage}`);
+      const nullWarning = nullGroups > 0
+        ? `\n⚠ ${nullGroups} group(s) had no valid numeric values — shown as "(no data)". Do NOT say these are zero.`
+        : "";
+      return withConfidence(`Group by: ${groupCol}\nAggregation: ${agg}${aggCol ? ` of ${aggCol}` : ""}\nGroups: ${results.length}\n\n${output}${coverage}${nullWarning}`);
     }
 
     case "sort": {
@@ -351,7 +385,7 @@ function formatRows(rows: Row[], columns: string[]): string {
 
 interface GroupByResult {
   group: string;
-  value: number;
+  value: number | null;
 }
 
 interface GroupByOutput {
@@ -388,19 +422,25 @@ function computeGroupBy(
 
   const results: GroupByResult[] = [];
   for (const [key, vals] of groups) {
-    let result: number;
+    let result: number | null;
     switch (agg) {
-      case "sum": result = vals.reduce((a, b) => a + b, 0); break;
+      case "sum": result = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) : null; break;
       case "count": result = vals.length; break;
-      case "avg": result = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; break;
-      case "min": result = vals.length > 0 ? Math.min(...vals) : 0; break;
-      case "max": result = vals.length > 0 ? Math.max(...vals) : 0; break;
+      case "avg": result = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null; break;
+      case "min": result = vals.length > 0 ? Math.min(...vals) : null; break;
+      case "max": result = vals.length > 0 ? Math.max(...vals) : null; break;
       default: result = vals.length;
     }
     results.push({ group: key, value: result });
   }
 
-  results.sort((a, b) => b.value - a.value);
+  // Sort: nulls sink to bottom, valid values sort descending
+  results.sort((a, b) => {
+    if (a.value == null && b.value == null) return 0;
+    if (a.value == null) return 1;
+    if (b.value == null) return -1;
+    return b.value - a.value;
+  });
 
   return {
     results,
@@ -477,7 +517,8 @@ function generateDrilldowns(
   // 5. ANOMALY — highlight the bottom if there's a big gap
   if (topGroup && bottomGroup && grouped.length > 3) {
     const topVal = grouped[0]?.value ?? 0;
-    const bottomVal = grouped[grouped.length - 1]?.value ?? 0;
+    const lastWithValue = [...grouped].reverse().find((g) => g.value != null);
+    const bottomVal = lastWithValue?.value ?? 0;
     if (topVal > 0 && bottomVal / topVal < 0.3) {
       suggestions.push(`What's happening with ${bottomGroup}?`);
     }
@@ -493,7 +534,6 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
   }
 
   // Parse metric(s) — supports comma-separated for multi-series
-  let wasAutoResolved = false;
   const metricRaw = args.metric.split(",").map((m) => m.trim()).filter(Boolean);
   const metricCols: string[] = [];
   for (const m of metricRaw) {
@@ -513,13 +553,11 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
     }
   }
 
-  // If no metrics resolved, auto-pick the first numeric column
+  // If no metrics resolved, return error with available columns — never silently substitute
   if (metricCols.length === 0) {
     const numericCols = data.columns.filter((c) => data.columnTypes[c] === "numeric");
     if (numericCols.length > 0) {
-      metricCols.push(numericCols[0]);
-      wasAutoResolved = true;
-      console.log(`[create_chart] No valid metric from "${args.metric}" — auto-picked "${numericCols[0]}"`);
+      return { error: `Metric "${args.metric}" not found. Available numeric columns: ${numericCols.join(", ")}. Call profile_dataset first to see all columns.` };
     } else {
       return { error: `No numeric columns available for charting. Columns: ${data.columns.join(", ")}` };
     }
@@ -531,11 +569,9 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
       (c) => data.columnTypes[c] !== "numeric" && !metricCols.includes(c)
     );
     if (textCols.length > 0) {
-      groupCol = textCols[0];
-      wasAutoResolved = true;
-      console.log(`[create_chart] group_by "${args.group_by}" not found — auto-picked "${groupCol}"`);
+      return { error: `Group-by column "${args.group_by}" not found. Available category columns: ${textCols.join(", ")}. Call profile_dataset first to see all columns.` };
     } else {
-      return { error: `Group-by column "${args.group_by}" not found. Available: ${data.columns.join(", ")}` };
+      return { error: `Group-by column "${args.group_by}" not found. Available columns: ${data.columns.join(", ")}` };
     }
   }
 
@@ -607,6 +643,7 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
 
   let chartData: Array<Record<string, string | number>>;
   let series: string[] | undefined;
+  let aggCoverage: { validRows: number; totalRows: number; skippedRows: number } | undefined;
 
   if (splitCol) {
     // ── Split-by: one series per unique value in splitCol ──
@@ -617,7 +654,7 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
     const allLabels = [...labelOrder.keys()];
 
     // Compute aggregation for each split value
-    const splitMaps = new Map<string, Map<string, number>>();
+    const splitMaps = new Map<string, Map<string, number | null>>();
     for (const sv of limitedSplits) {
       const subsetRows = rows.filter((r) => String(r[splitCol!] ?? "") === sv);
       const { results: grouped } = computeGroupBy(subsetRows, groupCol, primaryMetric, agg);
@@ -625,6 +662,7 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
     }
 
     // Build data points: one entry per label, one field per split value
+    // Null values become 0 in chart data (Recharts needs numbers) but are tracked for reporting
     chartData = allLabels.slice(0, MAX_CHART_POINTS).map((label) => {
       const point: Record<string, string | number> = { label };
       for (const sv of limitedSplits) {
@@ -647,22 +685,25 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
   } else if (metricCols.length > 1) {
     // ── Multi-metric: one series per metric column ──
     const primaryOutput = computeGroupBy(rows, groupCol, primaryMetric, agg);
+    aggCoverage = { validRows: primaryOutput.validRows, totalRows: primaryOutput.totalRows, skippedRows: primaryOutput.skippedRows };
 
     if (args.chart_type === "line") {
       primaryOutput.results.sort((a, b) => (labelOrder.get(a.group) ?? 0) - (labelOrder.get(b.group) ?? 0));
     }
 
     const limited = primaryOutput.results.slice(0, MAX_CHART_POINTS);
-    const metricMaps: Map<string, Map<string, number>> = new Map();
+    const metricMaps: Map<string, Map<string, number | null>> = new Map();
     for (const mc of metricCols.slice(1)) {
       const { results: grouped } = computeGroupBy(rows, groupCol, mc, agg);
       metricMaps.set(mc, new Map(grouped.map((g: GroupByResult) => [g.group, g.value])));
     }
 
-    chartData = limited.map((g: GroupByResult) => {
+    // Filter out groups where the primary metric has no data
+    const validLimited = limited.filter((g) => g.value != null);
+    chartData = validLimited.map((g: GroupByResult) => {
       const point: Record<string, string | number> = {
         label: g.group,
-        [primaryMetric]: g.value,
+        [primaryMetric]: g.value ?? 0,
       };
       for (const mc of metricCols.slice(1)) {
         point[mc] = metricMaps.get(mc)?.get(g.group) ?? 0;
@@ -674,13 +715,14 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
   } else {
     // ── Single series ──
     const primaryOutput = computeGroupBy(rows, groupCol, primaryMetric, agg);
+    aggCoverage = { validRows: primaryOutput.validRows, totalRows: primaryOutput.totalRows, skippedRows: primaryOutput.skippedRows };
 
     if (args.chart_type === "line") {
       primaryOutput.results.sort((a, b) => (labelOrder.get(a.group) ?? 0) - (labelOrder.get(b.group) ?? 0));
     }
 
-    const limited = primaryOutput.results.slice(0, MAX_CHART_POINTS);
-    chartData = limited.map((g: GroupByResult) => ({ label: g.group, value: g.value }));
+    const limited = primaryOutput.results.filter((g) => g.value != null).slice(0, MAX_CHART_POINTS);
+    chartData = limited.map((g: GroupByResult) => ({ label: g.group, value: g.value ?? 0 }));
   }
 
   // Pie: cap at 7 slices
@@ -701,7 +743,11 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
 
   // Build a data summary so the assistant speaks from the SAME numbers the chart shows
   const dataSummary = summarizeChartData(chartData, series);
-  const conf = computeConfidence(data, primaryMetric, groupCol, wasAutoResolved);
+  const conf = computeConfidence(data, primaryMetric, groupCol, false, aggCoverage);
+
+  // Block chart generation if data quality is too low
+  const gate = checkConfidenceGate(conf, "create_chart");
+  if (gate) return { error: gate };
 
   return {
     chart: {
@@ -711,9 +757,13 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
       x_label: groupCol,
       y_label: `${agg} of ${metricLabel}`,
       series,
+      coverage: aggCoverage
+        ? `Based on ${aggCoverage.validRows.toLocaleString()} of ${aggCoverage.totalRows.toLocaleString()} rows${aggCoverage.skippedRows > 0 ? ` (${aggCoverage.skippedRows.toLocaleString()} excluded)` : ""}`
+        : undefined,
+      dataSummary,
     },
     drilldowns,
-    result: `Chart: ${args.title}\n${agg} of ${metricLabel} by ${groupCol}\n\nData (this is the source of truth — speak ONLY these numbers):\n${dataSummary}${formatConfidenceForAssistant(conf)}`,
+    result: `Chart: ${args.title}\n${agg} of ${metricLabel} by ${groupCol}${aggCoverage && aggCoverage.skippedRows > 0 ? `\nData coverage: ${aggCoverage.validRows} of ${aggCoverage.totalRows} rows used (${aggCoverage.skippedRows} excluded)` : ""}\n\nData (this is the source of truth — speak ONLY these numbers):\n${dataSummary}${formatConfidenceForAssistant(conf)}`,
   };
 }
 
@@ -729,9 +779,13 @@ function summarizeChartData(
   return chartData.map((d) => {
     const label = d.label;
     if (seriesKeys.length === 1 && seriesKeys[0] === "value") {
-      return `  ${label}: ${formatNum(Number(d.value ?? 0))}`;
+      const v = d.value;
+      return `  ${label}: ${v == null ? "(no data)" : formatNum(Number(v))}`;
     }
-    const parts = seriesKeys.map((k) => `${k}=${formatNum(Number(d[k] ?? 0))}`);
+    const parts = seriesKeys.map((k) => {
+      const v = d[k];
+      return `${k}=${v == null ? "(no data)" : formatNum(Number(v))}`;
+    });
     return `  ${label}: ${parts.join(", ")}`;
   }).join("\n");
 }
@@ -749,6 +803,7 @@ const TOOL_TIMEOUT_MS = 15_000;
 
 interface CachedDataset {
   data: ParsedData;
+  fingerprint: string;
   profileResult?: string;
   timestamp: number;
 }
@@ -756,14 +811,25 @@ interface CachedDataset {
 // Cache keyed by fileName — survives across requests within the same server instance
 const datasetCache = new Map<string, CachedDataset>();
 
-// Aggregation result cache keyed by "fileName:tool:argsHash"
+// Aggregation result cache keyed by "fingerprint:tool:argsHash"
 const aggCache = new Map<string, { result: string; timestamp: number; chart?: unknown; drilldowns?: string[] }>();
 const CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 
-function getCacheKey(fileName: string, tool: string, args: Record<string, unknown>): string {
-  // Stable hash from sorted args
+/** Fast content fingerprint: columns + row count + sample of first/last rows.
+ *  Different data with the same filename will produce a different fingerprint. */
+function dataFingerprint(data: ParsedData): string {
+  const cols = data.columns.join(",");
+  const rowCount = data.totalRows ?? data.rows.length;
+  // Sample first and last row values for change detection
+  const firstRow = data.rows[0] ? JSON.stringify(Object.values(data.rows[0]).slice(0, 5)) : "";
+  const lastRow = data.rows[data.rows.length - 1] ? JSON.stringify(Object.values(data.rows[data.rows.length - 1]).slice(0, 5)) : "";
+  return `${cols}|${rowCount}|${firstRow}|${lastRow}`;
+}
+
+function getCacheKey(fingerprint: string, tool: string, args: Record<string, unknown>): string {
+  // Include fingerprint so re-uploaded data invalidates cache
   const sorted = Object.keys(args).sort().map((k) => `${k}=${args[k]}`).join("&");
-  return `${fileName}:${tool}:${sorted}`;
+  return `${fingerprint}:${tool}:${sorted}`;
 }
 
 function resolveDataset(
@@ -771,7 +837,43 @@ function resolveDataset(
   fileContent: string | undefined,
   fileName: string | undefined
 ): ParsedData | null {
-  // Check cache first
+  // Use provided data first — it's always the freshest
+  const data = parsedData ?? legacyParse(fileContent);
+
+  if (data) {
+    const fp = dataFingerprint(data);
+
+    // Enforce row limit
+    if (data.rows.length > MAX_DATASET_ROWS) {
+      console.log(`[cache] Dataset "${fileName}" has ${data.rows.length} rows — capping at ${MAX_DATASET_ROWS}`);
+      data.rows = data.rows.slice(0, MAX_DATASET_ROWS);
+      data.totalRows = data.rows.length;
+    }
+
+    if (fileName) {
+      const cached = datasetCache.get(fileName);
+      if (cached && cached.fingerprint === fp && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        // Same data, use cached (preserves profileResult)
+        return cached.data;
+      }
+      // New or changed data — invalidate old caches
+      if (cached && cached.fingerprint !== fp) {
+        console.log(`[cache] Data changed for "${fileName}" — invalidating caches`);
+        // Clear stale aggregation cache entries for this file
+        for (const key of aggCache.keys()) {
+          if (key.startsWith(cached.fingerprint + ":")) {
+            aggCache.delete(key);
+          }
+        }
+      }
+      datasetCache.set(fileName, { data, fingerprint: fp, timestamp: Date.now() });
+      console.log(`[cache] Cached dataset "${fileName}" (${data.rows.length} rows, ${data.columns.length} cols)`);
+    }
+
+    return data;
+  }
+
+  // Fall back to cache if no fresh data provided
   if (fileName) {
     const cached = datasetCache.get(fileName);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -779,24 +881,7 @@ function resolveDataset(
     }
   }
 
-  // Use provided data
-  const data = parsedData ?? legacyParse(fileContent);
-  if (!data) return null;
-
-  // Enforce row limit
-  if (data.rows.length > MAX_DATASET_ROWS) {
-    console.log(`[cache] Dataset "${fileName}" has ${data.rows.length} rows — capping at ${MAX_DATASET_ROWS}`);
-    data.rows = data.rows.slice(0, MAX_DATASET_ROWS);
-    data.totalRows = data.rows.length;
-  }
-
-  // Cache it
-  if (fileName) {
-    datasetCache.set(fileName, { data, timestamp: Date.now() });
-    console.log(`[cache] Cached dataset "${fileName}" (${data.rows.length} rows, ${data.columns.length} cols)`);
-  }
-
-  return data;
+  return null;
 }
 
 // ── Rate limiting ────────────────────────────────────────
@@ -824,7 +909,8 @@ async function executeToolLogic(
   tool: string,
   args: Record<string, unknown>,
   data: ParsedData | null,
-  fileName: string
+  fileName: string,
+  extraData?: { parsedDataB?: ParsedData }
 ): Promise<Response> {
   switch (tool) {
     case "profile_dataset": {
@@ -860,8 +946,9 @@ async function executeToolLogic(
         );
       }
 
-      // Check aggregation cache
-      const cacheKey = getCacheKey(fileName, tool, args);
+      // Check aggregation cache (keyed by data fingerprint, not just filename)
+      const fp = dataFingerprint(data);
+      const cacheKey = getCacheKey(fp, tool, args);
       const cachedAgg = aggCache.get(cacheKey);
       if (cachedAgg && Date.now() - cachedAgg.timestamp < CACHE_TTL_MS) {
         console.log(`[cache] Aggregation cache hit: ${cacheKey}`);
@@ -902,8 +989,9 @@ async function executeToolLogic(
       if (!metric) return Response.json({ error: `Missing metric. Available: ${data.columns.join(", ")}` }, { status: 400 });
       if (!groupBy) return Response.json({ error: `Missing group_by. Available: ${data.columns.join(", ")}` }, { status: 400 });
 
-      // Check aggregation cache for chart
-      const cacheKey = getCacheKey(fileName, tool, args);
+      // Check aggregation cache for chart (keyed by data fingerprint)
+      const fp = dataFingerprint(data);
+      const cacheKey = getCacheKey(fp, tool, args);
       const cachedChart = aggCache.get(cacheKey);
       if (cachedChart && Date.now() - cachedChart.timestamp < CACHE_TTL_MS) {
         console.log(`[cache] Chart cache hit: ${cacheKey}`);
@@ -942,20 +1030,78 @@ async function executeToolLogic(
       return Response.json({ result: result.result, chart: result.chart, drilldowns: result.drilldowns });
     }
 
+    case "compare_files": {
+      // This tool receives both file datasets from the client
+      const fileNameA = args.file_name_a as string | undefined;
+      const fileNameB = args.file_name_b as string | undefined;
+
+      if (!fileNameA || !fileNameB) {
+        return Response.json({ error: "Both file_name_a and file_name_b are required." }, { status: 400 });
+      }
+
+      const parsedDataB = extraData?.parsedDataB;
+
+      if (!data) {
+        return Response.json({ error: `Cannot find data for "${fileNameA}".` }, { status: 400 });
+      }
+      if (!parsedDataB) {
+        return Response.json({ error: `Cannot find data for "${fileNameB}". Make sure both files are uploaded.` }, { status: 400 });
+      }
+
+      // Confidence gate on both files
+      const confA = computeConfidence(data);
+      const confB = computeConfidence(parsedDataB);
+      const worstConf = confA.score < confB.score ? confA : confB;
+      const cmpGate = checkConfidenceGate(worstConf, "compare_files");
+      if (cmpGate) return Response.json({ result: cmpGate });
+
+      const { compareFiles } = await import("@/lib/comparison");
+      const comparison = compareFiles(data, parsedDataB, fileNameA, fileNameB);
+
+      if (!comparison.compatible) {
+        return Response.json({
+          result: comparison.summary,
+          drilldowns: [],
+        });
+      }
+
+      // Return the first chart for rendering
+      const chart = comparison.charts.length > 0
+        ? { ...comparison.charts[0], id: `compare-${Date.now()}` }
+        : undefined;
+
+      console.log(`[compare_files] ${fileNameA} vs ${fileNameB}: ${comparison.kpis.length} KPIs, ${comparison.charts.length} charts`);
+
+      return Response.json({
+        result: comparison.summary,
+        chart,
+        comparison: {
+          kpis: comparison.kpis,
+          charts: comparison.charts,
+          issues: comparison.issues,
+        },
+        drilldowns: comparison.drilldowns,
+      });
+    }
+
     case "recommend_actions": {
       if (!data) {
         return Response.json({ error: "Cannot recommend: no data available." }, { status: 400 });
       }
 
+      // Confidence gate — recommendations require at least medium confidence
+      const preConf = computeConfidence(data);
+      const gate = checkConfidenceGate(preConf, "recommend_actions");
+      if (gate) return Response.json({ result: gate });
+
       const { analyzeDataset } = await import("@/lib/insights");
       const { generateDecisions, formatDecisionsForAssistant } = await import("@/lib/decisions");
       const { selectKpis } = await import("@/lib/kpi");
+      const { findPrimaryMetric, findSecondaryMetric } = await import("@/lib/dashboard");
 
-      // Detect columns
-      const primaryMetric = data.columns.find((c) => data.columnTypes[c] === "numeric") ?? null;
-      const secondaryMetric = primaryMetric
-        ? data.columns.find((c) => data.columnTypes[c] === "numeric" && c !== primaryMetric) ?? null
-        : null;
+      // Detect columns — profit first, then revenue, then first numeric
+      const primaryMetric = findPrimaryMetric(data);
+      const secondaryMetric = primaryMetric ? findSecondaryMetric(data, primaryMetric) : null;
       const timeCol = data.columns.find((c) => data.columnTypes[c] === "date") ??
         data.columns.find((c) => /date|month|quarter|year|period|week/i.test(c)) ?? null;
       const categories = data.columns.filter(
@@ -1008,6 +1154,11 @@ async function executeToolLogic(
           { status: 400 }
         );
       }
+
+      // Confidence gate — dashboards require at least medium confidence
+      const dashConf = computeConfidence(data);
+      const dashGate = checkConfidenceGate(dashConf, "generate_dashboard");
+      if (dashGate) return Response.json({ result: dashGate });
 
       const { generateDashboard } = await import("@/lib/dashboard");
       const dashboard = generateDashboard(data, fileName);
@@ -1077,6 +1228,7 @@ export async function POST(request: Request) {
     fileContent?: string;
     fileName?: string;
     parsedData?: ParsedData;
+    parsedDataB?: ParsedData;
   };
 
   try {
@@ -1085,7 +1237,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { tool, args = {}, fileContent, fileName, parsedData } = body;
+  const { tool, args = {}, fileContent, fileName, parsedData, parsedDataB } = body;
 
   if (!tool || typeof tool !== "string") {
     return Response.json({ error: "Missing or invalid 'tool'" }, { status: 400 });
@@ -1100,7 +1252,7 @@ export async function POST(request: Request) {
   try {
     // Wrap execution in a timeout
     const result = await Promise.race([
-      executeToolLogic(tool, args, data, fName),
+      executeToolLogic(tool, args, data, fName, { parsedDataB }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("Tool execution timed out")), TOOL_TIMEOUT_MS)
       ),
