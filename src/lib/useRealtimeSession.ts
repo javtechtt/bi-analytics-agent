@@ -162,20 +162,34 @@ function resolveFile(
   return null;
 }
 
+export interface RealtimeSessionOptions {
+  initialMessages?: Message[];
+  initialCharts?: ChartConfig[];
+  initialDashboard?: DashboardData | null;
+  onSave?: (data: {
+    messages: Message[];
+    charts: ChartConfig[];
+    dashboard: DashboardData | null;
+    outputMode: OutputMode;
+  }) => void;
+}
+
 export function useRealtimeSession(
   files: UploadedFile[],
-  mode: OutputMode = "executive"
+  mode: OutputMode = "executive",
+  options: RealtimeSessionOptions = {}
 ): UseRealtimeSession {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [sessionStatus, setSessionStatus] =
     useState<SessionStatus>("disconnected");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(options.initialMessages ?? []);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  const [charts, setCharts] = useState<ChartConfig[]>(options.initialCharts ?? []);
   const [focusedChartId, setFocusedChartId] = useState<string | null>(null);
   const [drilldowns, setDrilldowns] = useState<string[]>([]);
-  const [activeDashboard, setActiveDashboard] = useState<DashboardData | null>(null);
+  const [activeDashboard, setActiveDashboard] = useState<DashboardData | null>(options.initialDashboard ?? null);
+  const onSaveRef = useRef(options.onSave);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -386,14 +400,34 @@ export function useRealtimeSession(
     pendingResponseCreateRef.current = false;
   }, []);
 
+  // Keep onSave ref current
+  onSaveRef.current = options.onSave;
+
   const disconnect = useCallback(() => {
+    // Persist state before tearing down
+    if (onSaveRef.current) {
+      // Read latest state via setState callbacks to avoid stale closures
+      setMessages((msgs) => {
+        setCharts((chts) => {
+          setActiveDashboard((dash) => {
+            if (msgs.length > 0 || chts.length > 0 || dash) {
+              onSaveRef.current?.({ messages: msgs, charts: chts, dashboard: dash, outputMode: mode });
+            }
+            return dash;
+          });
+          return chts;
+        });
+        return msgs;
+      });
+    }
+
     cleanup();
     setSessionStatus("disconnected");
     setOrbState("idle");
     setIsConnecting(false);
     setError(null);
-    log("lifecycle", "Disconnected");
-  }, [cleanup]);
+    log("lifecycle", "Disconnected (state saved)");
+  }, [cleanup, mode]);
 
   // ── Handle data-channel events ─────────────────────────
   const handleServerEvent = useCallback(

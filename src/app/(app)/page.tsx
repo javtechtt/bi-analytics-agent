@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { Starfield } from "@/components/Starfield";
 import { DocumentPanel } from "@/components/DocumentPanel";
@@ -9,6 +9,8 @@ import { TranscriptOverlay } from "@/components/TranscriptOverlay";
 import { ChartStage } from "@/components/ChartStage";
 import { DashboardView } from "@/components/DashboardView";
 import { ModeSelector } from "@/components/ModeSelector";
+import { AuthShell } from "@/components/AuthShell";
+import { useWorkspaceContext } from "@/components/WorkspaceProvider";
 import { useRealtimeSession } from "@/lib/useRealtimeSession";
 import { selectKpis } from "@/lib/kpi";
 import type { UploadedFile, OutputMode } from "@/lib/types";
@@ -26,8 +28,9 @@ function isSupportedFile(name: string): boolean {
 }
 
 export default function Home() {
-  const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [mode, setMode] = useState<OutputMode>("executive");
+  const workspace = useWorkspaceContext();
+  const [files, setFiles] = useState<UploadedFile[]>(workspace.initialFiles);
+  const [mode, setMode] = useState<OutputMode>(workspace.session?.outputMode ?? "executive");
 
   const {
     orbState,
@@ -47,7 +50,12 @@ export default function Home() {
     sendDrilldown,
     activeDashboard,
     closeDashboard,
-  } = useRealtimeSession(files, mode);
+  } = useRealtimeSession(files, mode, {
+    initialMessages: workspace.initialMessages,
+    initialCharts: workspace.initialCharts,
+    initialDashboard: workspace.initialDashboard,
+    onSave: workspace.saveSessionState,
+  });
 
   const handleOrbClick = useCallback(() => {
     if (sessionStatus === "connected") {
@@ -102,13 +110,20 @@ export default function Home() {
             parsedData?: import("@/lib/types").ParsedData;
           };
 
+          const readyFile: UploadedFile = {
+            ...entry,
+            status: "ready" as const,
+            content: text,
+            summary,
+            parsedData,
+          };
+
           setFiles((prev) =>
-            prev.map((f) =>
-              f.id === entry.id
-                ? { ...f, status: "ready" as const, content: text, summary, parsedData }
-                : f
-            )
+            prev.map((f) => f.id === entry.id ? readyFile : f)
           );
+
+          // Persist file to Supabase
+          workspace.saveFile(readyFile, file);
 
           if (sessionStatus === "connected") {
             sendFileContext(file.name, text, parsedData);
@@ -168,6 +183,7 @@ export default function Home() {
             disabled={sessionStatus === "connected"}
           />
           <SessionStatus status={sessionStatus} />
+          <AuthShell />
         </div>
       </header>
 
