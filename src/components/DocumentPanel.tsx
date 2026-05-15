@@ -137,7 +137,7 @@ export function DocumentPanel({ files, onUpload, onRemove }: DocumentPanelProps)
                         {f.name}
                       </p>
                       <p className="text-[10px] text-text-muted">
-                        {f.status === "parsing" && "Parsing…"}
+                        {f.status === "parsing" && (f.progressMessage ?? "Parsing…")}
                         {f.status === "ready" && (f.summary ?? f.sizeLabel)}
                         {f.status === "error" && (
                           <span className="text-red-400">{f.error}</span>

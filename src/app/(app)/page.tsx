@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import { VoiceOrb } from "@/components/VoiceOrb";
 import { Starfield } from "@/components/Starfield";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { SessionStatus } from "@/components/SessionStatus";
-import { ChartStage } from "@/components/ChartStage";
-import { DashboardView } from "@/components/DashboardView";
+import { SceneStage } from "@/components/scenes/SceneStage";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { useWorkspaceContext } from "@/components/WorkspaceProvider";
 import { useRealtimeSession } from "@/lib/useRealtimeSession";
-import { selectKpis } from "@/lib/kpi";
 import type { UploadedFile, OutputMode } from "@/lib/types";
 
 function formatFileSize(bytes: number): string {
@@ -39,15 +37,10 @@ export default function Home() {
     sendFileContext,
     isConnecting,
     error,
-    charts,
-    focusedChartId,
-    removeChart,
-    clearCharts,
-    focusChart,
-    drilldowns,
     sendDrilldown,
-    activeDashboard,
-    closeDashboard,
+    scenes,
+    removeScene,
+    clearScenes,
   } = useRealtimeSession(files, mode, language, {
     initialMessages: workspace.initialMessages,
     initialCharts: workspace.initialCharts,
@@ -88,6 +81,46 @@ export default function Home() {
         const file = incoming[i];
         const entry = entries[i];
 
+        // Phase 9 upload progress: generate a per-file trace_id, send it
+        // via X-Trace-Id, and poll /api/tools/progress/[traceId] every
+        // 500ms while the parse is in flight. Latest message goes onto
+        // the file's `progressMessage` so DocumentPanel can render it.
+        const traceId =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `trace_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+        let cursor: string | null = null;
+        const pollHandle = setInterval(async () => {
+          try {
+            const url = new URL(
+              `/api/tools/progress/${traceId}`,
+              window.location.origin
+            );
+            if (cursor) url.searchParams.set("since", cursor);
+            const r = await fetch(url.toString());
+            if (!r.ok) return;
+            const body = (await r.json()) as {
+              events: Array<{
+                id: string;
+                kind: "phase" | "info" | "warn";
+                message: string;
+                createdAt: string;
+              }>;
+            };
+            if (!body.events || body.events.length === 0) return;
+            cursor = body.events[body.events.length - 1].createdAt;
+            const latest = body.events[body.events.length - 1].message;
+            setFiles((prev) =>
+              prev.map((f) =>
+                f.id === entry.id ? { ...f, progressMessage: latest } : f
+              )
+            );
+          } catch {
+            // Poll errors are non-fatal — try again next tick.
+          }
+        }, 500);
+
         try {
           const form = new FormData();
           form.append("file", file);
@@ -95,6 +128,9 @@ export default function Home() {
           const res = await fetch("/api/files/parse", {
             method: "POST",
             body: form,
+            headers: {
+              "X-Trace-Id": traceId,
+            },
           });
 
           if (!res.ok) {
@@ -102,10 +138,13 @@ export default function Home() {
             throw new Error(errMsg);
           }
 
-          const { text, summary, parsedData } = (await res.json()) as {
+          const { text, summary, parsedData, extraction, documentId, hasPassages } = (await res.json()) as {
             text: string;
             summary: string;
             parsedData?: import("@/lib/types").ParsedData;
+            extraction?: import("@/lib/documents/types").DocumentExtraction;
+            documentId?: string;
+            hasPassages?: boolean;
           };
 
           const readyFile: UploadedFile = {
@@ -114,6 +153,9 @@ export default function Home() {
             content: text,
             summary,
             parsedData,
+            extraction,
+            documentId,
+            hasPassages,
           };
 
           setFiles((prev) =>
@@ -124,7 +166,7 @@ export default function Home() {
           workspace.saveFile(readyFile, file);
 
           if (sessionStatus === "connected") {
-            sendFileContext(file.name, text, parsedData);
+            sendFileContext(file.name, text, parsedData, extraction, hasPassages);
           }
         } catch (err) {
           const raw = err instanceof Error ? err.message : "Parse failed";
@@ -135,7 +177,19 @@ export default function Home() {
           setFiles((prev) =>
             prev.map((f) =>
               f.id === entry.id
-                ? { ...f, status: "error" as const, error: msg }
+                ? { ...f, status: "error" as const, error: msg, progressMessage: undefined }
+                : f
+            )
+          );
+        } finally {
+          // Stop polling regardless of outcome. The progressMessage on a
+          // ready file is irrelevant (DocumentPanel only reads it when
+          // status === "parsing") but we clear it for tidiness.
+          clearInterval(pollHandle);
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.id === entry.id && f.progressMessage
+                ? { ...f, progressMessage: undefined }
                 : f
             )
           );
@@ -159,13 +213,6 @@ export default function Home() {
       : isConnecting
         ? "Connecting…"
         : undefined;
-
-  // Compute KPI cards from the most recent ready file's parsed data
-  const kpiCards = useMemo(() => {
-    const readyFile = [...files].reverse().find((f) => f.status === "ready" && f.parsedData);
-    if (!readyFile?.parsedData) return [];
-    return selectKpis(readyFile.parsedData);
-  }, [files]);
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -202,26 +249,14 @@ export default function Home() {
         </div>
       )}
 
-      {/* Multi-chart stage — focused chart centered, supporting charts below */}
-      <ChartStage
-        charts={charts}
-        focusedChartId={focusedChartId}
-        drilldowns={drilldowns}
-        kpiCards={kpiCards}
-        onRemove={removeChart}
-        onFocus={focusChart}
-        onClearAll={clearCharts}
+      {/* Phase 3: Visual Composition Engine — unified scene renderer.
+          All chart/dashboard/document outputs flow through here as scenes. */}
+      <SceneStage
+        scenes={scenes}
+        onRemoveScene={removeScene}
+        onClearAll={clearScenes}
         onDrilldown={sendDrilldown}
       />
-
-      {/* AI-generated dashboard */}
-      {activeDashboard && (
-        <DashboardView
-          dashboard={activeDashboard}
-          onClose={closeDashboard}
-          onDrilldown={sendDrilldown}
-        />
-      )}
     </div>
   );
 }
