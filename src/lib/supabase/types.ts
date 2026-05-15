@@ -77,6 +77,30 @@ export interface DbDashboard {
   updated_at: string;
 }
 
+/**
+ * Phase 1: row type for the new `documents` table. Lives alongside `files`;
+ * `file_id` links them. Phase 1 doesn't write rows here yet — Phase 2's
+ * extraction service will populate it. Defined now so the schema is typed
+ * end-to-end and consumers in later phases can land without further changes.
+ */
+export interface DbDocument {
+  id: string;
+  file_id: string | null;
+  session_id: string;
+  user_id: string;
+  type: string;                          // DocumentType (see lib/documents/types.ts)
+  subtype: string | null;
+  language: string;
+  classifier_confidence: number;
+  status: string;                        // pending | classifying | extracting | ready | error
+  extraction: unknown;                   // DocumentExtraction as JSONB
+  overall_confidence: number;
+  grounding_ratio: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Mappers: DB rows → client types ─────────────────────
 
 import type { UploadedFile, ParsedData, Message } from "@/lib/types";

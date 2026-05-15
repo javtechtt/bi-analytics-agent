@@ -1,4 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
+import {
+  withTrace,
+  beginToolCall,
+  endToolCall,
+  totalCostForToolCall,
+} from "@/lib/telemetry/trace";
+import { guardToolCall, guardSoftError } from "@/lib/planner/guard";
+import { randomUUID } from "node:crypto";
 
 type Row = Record<string, string | number | null>;
 
@@ -565,7 +573,7 @@ function buildChart(data: ParsedData, _fileName: string, args: CreateChartArgs) 
     }
   }
 
-  let groupCol = resolveColumn(args.group_by, data);
+  const groupCol = resolveColumn(args.group_by, data);
   if (!groupCol) {
     const textCols = data.columns.filter(
       (c) => data.columnTypes[c] !== "numeric" && !metricCols.includes(c)
@@ -912,9 +920,247 @@ async function executeToolLogic(
   args: Record<string, unknown>,
   data: ParsedData | null,
   fileName: string,
-  extraData?: { parsedDataB?: ParsedData }
+  extraData?: { parsedDataB?: ParsedData; userId?: string }
 ): Promise<Response> {
   switch (tool) {
+    case "compose_visual_scene": {
+      // Phase 3: explicit scene composition by intent. Currently scoped to
+      // narrative documents — tabular intents go through create_chart /
+      // generate_dashboard which already produce scenes via the client bridge.
+      const userId = extraData?.userId;
+      if (!userId) {
+        return Response.json({ error: "Unauthenticated compose_visual_scene call." }, { status: 401 });
+      }
+
+      const sceneFileName = (args.file_name as string | undefined) ?? fileName;
+      const intent = (args.intent as string | undefined) ?? "overview";
+      const question = args.question as string | undefined;
+
+      if (!sceneFileName) {
+        return Response.json({ error: "Missing 'file_name' for compose_visual_scene." }, { status: 400 });
+      }
+
+      try {
+        const { findDocumentByFileName } = await import("@/lib/documents/store");
+        const record = await findDocumentByFileName(sceneFileName, userId);
+        if (!record) {
+          return Response.json({
+            error: `No document found matching "${sceneFileName}". Upload the file first.`,
+          }, { status: 404 });
+        }
+
+        // Capability check — NOT a strict type check. The type label can be
+        // stale (e.g. a PDF that was first classified as table_pdf but later
+        // had the narrative adapter run on it would still have type=table_pdf
+        // in the JSONB while now carrying pageTexts). What actually matters
+        // is whether the document has narrative content the composer can use.
+        const ex = record.extraction;
+        const hasNarrativeContent =
+          (ex.pageTexts && ex.pageTexts.length > 0) ||
+          (ex.facts?.length ?? 0) > 0 ||
+          (ex.metrics?.length ?? 0) > 0;
+        const hasTabularContent =
+          (ex.tables?.length ?? 0) > 0 && (ex.tables?.[0]?.data?.rows?.length ?? 0) > 0;
+
+        if (!hasNarrativeContent && hasTabularContent) {
+          return Response.json({
+            error: `"${sceneFileName}" is a tabular document — use create_chart or generate_dashboard which already produce scenes. compose_visual_scene targets narrative content (text, facts, risks, entities, timeline).`,
+          }, { status: 400 });
+        }
+        if (!hasNarrativeContent) {
+          return Response.json({
+            error: `"${sceneFileName}" has no extractable narrative content. If it's a scanned PDF, OCR support arrives in Phase 5; if it's a real tabular file, use the tabular tools.`,
+          }, { status: 400 });
+        }
+
+        const intentToFocus: Record<string, "general" | "risks" | "parties" | "dates" | "metrics" | "obligations"> = {
+          risk: "risks",
+          timeline: "dates",
+          metric: "metrics",
+          parties: "parties",
+          obligations: "obligations",
+          overview: "general",
+          custom: "general",
+        };
+        const focus = intentToFocus[intent] ?? "general";
+
+        const DEFAULT_QUESTIONS: Record<string, string> = {
+          risk: "What are the main risks identified in this document?",
+          timeline: "What are the key dates and events?",
+          metric: "What are the most important metrics in this document?",
+          parties: "Who are the parties or entities involved?",
+          obligations: "What obligations and commitments are required?",
+          overview: "Give me an overview of this document.",
+          comparison: "Summarize the document.",
+          custom: "Summarize the document.",
+          trend: "Summarize the document.",
+        };
+
+        const { runQueryDocument } = await import("@/lib/extraction/query");
+        const queryResult = await runQueryDocument({
+          userId,
+          fileName: sceneFileName,
+          question: question ?? DEFAULT_QUESTIONS[intent] ?? "Summarize the document.",
+          focus,
+        });
+
+        const dr = queryResult.documentResponse;
+
+        const { composeScene } = await import("@/lib/visual/composer");
+        const intentToSceneIntent: Record<string, "overview" | "risk" | "timeline" | "metric" | "parties" | "obligations" | "trend" | "comparison" | "custom"> = {
+          overview: "overview",
+          risk: "risk",
+          timeline: "timeline",
+          metric: "metric",
+          parties: "parties",
+          obligations: "obligations",
+          trend: "trend",
+          comparison: "comparison",
+          custom: "custom",
+        };
+        const sceneIntent = intentToSceneIntent[intent] ?? "overview";
+
+        const scene = composeScene({
+          intent: sceneIntent,
+          documentType: dr.documentType as import("@/lib/documents/types").DocumentType,
+          documentId: record.documentId,
+          fileName: sceneFileName,
+          question,
+          answer: dr.answer,
+          facts: dr.facts,
+          metrics: dr.metrics,
+          timeline: dr.timeline,
+          entities: dr.entities,
+          spans: dr.spans,
+          confidence: dr.confidence,
+        });
+
+        // Best-effort persistence — non-blocking.
+        try {
+          const { saveScene } = await import("@/lib/visual/store");
+          await saveScene({ scene, userId, sessionId: record.sessionId });
+        } catch (persistErr) {
+          console.warn("[tools/execute] scene save failed:", persistErr);
+        }
+
+        // The realtime agent reads `result` aloud. The client bridge will
+        // append the `scene` to scenes state.
+        return Response.json({
+          result: queryResult.result,
+          scene,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "compose_visual_scene failed";
+        console.error("[tools/execute] compose_visual_scene error:", msg);
+        return Response.json({ error: msg }, { status: 500 });
+      }
+    }
+
+    case "query_document_v2": {
+      // Phase 1: RAG-based question answering. Retrieves passages via
+      // pgvector, optionally reranks, then composes an answer grounded in
+      // the actual passage text. Falls back to legacy query_document when
+      // the document hasn't been embedded yet.
+      const userId = extraData?.userId;
+      if (!userId) {
+        return Response.json({ error: "Unauthenticated query_document_v2 call." }, { status: 401 });
+      }
+
+      const question = args.question as string | undefined;
+      const focus = args.focus as
+        | "general"
+        | "risks"
+        | "parties"
+        | "dates"
+        | "metrics"
+        | "obligations"
+        | undefined;
+      const v2FileName = (args.file_name as string | undefined) ?? fileName;
+
+      if (!question) {
+        return Response.json({ error: "Missing 'question' for query_document_v2." }, { status: 400 });
+      }
+      if (!v2FileName) {
+        return Response.json({ error: "Missing 'file_name' for query_document_v2." }, { status: 400 });
+      }
+
+      const { runQueryDocumentV2, FallbackToLegacyError } = await import("@/lib/retrieval/query");
+
+      try {
+        const out = await runQueryDocumentV2({
+          userId,
+          fileName: v2FileName,
+          question,
+          focus,
+        });
+        return Response.json(out);
+      } catch (err) {
+        // Auto-fall-back to legacy when the document isn't embedded.
+        if (err instanceof FallbackToLegacyError) {
+          console.warn(`[query_document_v2] ${err.message} — falling back`);
+          const { runQueryDocument } = await import("@/lib/extraction/query");
+          try {
+            const fallback = await runQueryDocument({
+              userId,
+              fileName: v2FileName,
+              question,
+              focus,
+            });
+            return Response.json(fallback);
+          } catch (legacyErr) {
+            const msg = legacyErr instanceof Error ? legacyErr.message : "fallback failed";
+            return Response.json({ error: msg }, { status: 500 });
+          }
+        }
+        const msg = err instanceof Error ? err.message : "query_document_v2 failed";
+        console.error("[tools/execute] query_document_v2 error:", msg);
+        return Response.json({ error: msg }, { status: 500 });
+      }
+    }
+
+    case "query_document": {
+      // Phase 2: grounded query against a narrative document.
+      // This is the ONLY tool in Phase 2 that touches the documents table
+      // and runs the LLM extraction pipeline.
+      const userId = extraData?.userId;
+      if (!userId) {
+        return Response.json({ error: "Unauthenticated query_document call." }, { status: 401 });
+      }
+
+      const question = args.question as string | undefined;
+      const focus = args.focus as
+        | "general"
+        | "risks"
+        | "parties"
+        | "dates"
+        | "metrics"
+        | "obligations"
+        | undefined;
+      const queryFileName = (args.file_name as string | undefined) ?? fileName;
+
+      if (!question) {
+        return Response.json({ error: "Missing 'question' for query_document." }, { status: 400 });
+      }
+      if (!queryFileName) {
+        return Response.json({ error: "Missing 'file_name' for query_document." }, { status: 400 });
+      }
+
+      const { runQueryDocument } = await import("@/lib/extraction/query");
+      try {
+        const out = await runQueryDocument({
+          userId,
+          fileName: queryFileName,
+          question,
+          focus,
+        });
+        return Response.json(out);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "query_document failed";
+        console.error("[tools/execute] query_document error:", msg);
+        return Response.json({ error: msg }, { status: 500 });
+      }
+    }
+
     case "profile_dataset": {
       if (!data) {
         return Response.json(
@@ -1256,21 +1502,85 @@ export async function POST(request: Request) {
   // Resolve dataset from cache or provided data
   const data = resolveDataset(parsedData, fileContent, fileName);
 
-  try {
-    // Wrap execution in a timeout
-    const result = await Promise.race([
-      executeToolLogic(tool, args, data, fName, { parsedDataB }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Tool execution timed out")), TOOL_TIMEOUT_MS)
-      ),
-    ]);
+  // Phase 0 telemetry: open a trace + tool_call so every child LLM call links
+  // back to this tool invocation. Trace ID can be supplied by the caller (e.g.
+  // the eval runner) via X-Trace-Id; otherwise we generate one.
+  const incomingTraceId = request.headers.get("x-trace-id") ?? undefined;
+  const traceId = incomingTraceId ?? randomUUID();
 
-    return result;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Tool execution failed";
-    console.error(`[tools/execute] ${tool} error:`, message);
-    return Response.json({ error: message }, { status: 500 });
-  }
+  return await withTrace({ traceId, userId }, async () => {
+    const handle = await beginToolCall({ toolName: tool, args }).catch(() => null) as
+      | { id: string; traceId: string }
+      | null;
+    const startedAt = Date.now();
+
+    if (handle) {
+      // Make the toolCallId visible to all child operations via the trace.
+      // (withTrace inherits parent ctx; we re-enter with the toolCallId.)
+    }
+
+    const finish = async (
+      status: "success" | "error" | "timeout",
+      payload: Response | null,
+      error?: string
+    ): Promise<Response> => {
+      if (handle) {
+        const totalCost = await totalCostForToolCall(handle.id);
+        await endToolCall({
+          handle,
+          status,
+          durationMs: Date.now() - startedAt,
+          error,
+          totalCostUsd: totalCost ?? null,
+        });
+      }
+      return payload ?? Response.json({ error: error ?? "Tool failed" }, { status: 500 });
+    };
+
+    // Re-enter the trace with the toolCallId so child instrumented() calls
+    // attach to this tool_call row.
+    return await withTrace({ traceId, userId, toolCallId: handle?.id }, async () => {
+      try {
+        // Phase 1 routing guard: catch tool/file-type mismatches before
+        // they reach the tool body. Returns a soft error the voice agent
+        // can recover from in conversation. Skipped for list_uploaded_files
+        // and other always-allowed tools.
+        const guardResult = await guardToolCall({ toolName: tool, args, userId });
+        if (!guardResult.allowed) {
+          console.warn(
+            `[tools/execute] guard blocked ${tool}: ${guardResult.reason}` +
+              (guardResult.suggestedTool ? ` → suggesting ${guardResult.suggestedTool}` : "")
+          );
+          const soft = guardSoftError(guardResult);
+          return await finish("success", Response.json(soft));
+        }
+
+        const timeoutMs =
+          tool === "query_document" ||
+          tool === "compose_visual_scene" ||
+          tool === "query_document_v2"
+            ? 120_000
+            : TOOL_TIMEOUT_MS;
+        const result = await Promise.race([
+          executeToolLogic(tool, args, data, fName, { parsedDataB, userId }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Tool execution timed out")), timeoutMs)
+          ),
+        ]);
+
+        return await finish("success", result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tool execution failed";
+        console.error(`[tools/execute] ${tool} error:`, message);
+        const status = message.includes("timed out") ? "timeout" : "error";
+        return await finish(
+          status,
+          Response.json({ error: message }, { status: 500 }),
+          message
+        );
+      }
+    });
+  });
 }
 
 // ── Legacy text parser (fallback) ────────────────────────

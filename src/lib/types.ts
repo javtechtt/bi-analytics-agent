@@ -51,6 +51,31 @@ export interface UploadedFile {
   summary?: string;
   /** Error message if parsing failed */
   error?: string;
+  /**
+   * Phase 1 (additive): universal document extraction produced by the
+   * ingestion pipeline. Current consumers may ignore this; future-phase
+   * tools and the visual composer will read it. Populated for every
+   * successfully parsed file alongside `parsedData`.
+   */
+  extraction?: import("@/lib/documents/types").DocumentExtraction;
+  /**
+   * Phase 2: id of the persisted row in the `documents` table. The voice
+   * agent's `query_document` tool resolves files by name → documentId, but
+   * direct callers may use this for cache lookups.
+   */
+  documentId?: string;
+  /**
+   * Phase 1 RAG flag: true once the document has been embedded into the
+   * passages table. The voice agent uses this to pick query_document_v2 vs
+   * the legacy query_document. Populated from the parse response.
+   */
+  hasPassages?: boolean;
+  /**
+   * Phase 9: latest progress message from the parse pipeline while
+   * `status === "parsing"`. The DocumentPanel renders this in place of
+   * the static "Parsing…" label. Cleared on transition to ready/error.
+   */
+  progressMessage?: string;
 }
 
 // ── Realtime data-channel server events ──────────────────

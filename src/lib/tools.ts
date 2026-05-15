@@ -177,6 +177,87 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ["file_name"],
     },
   },
+  {
+    type: "function",
+    name: "compose_visual_scene",
+    description:
+      "Compose a VISUAL SCENE on screen for a document by intent. Use when the user asks for a specific dimension (risks, timeline, parties, obligations, metrics) on a NARRATIVE document and you want to refresh the screen with that view. Returns a scene the UI renders (risk panel + callouts, timeline, entity grid, etc.). For SPREADSHEETS, prefer create_chart / generate_dashboard which already produce scenes. The first call on a fresh document is slow because it runs the same extraction as query_document; subsequent calls are fast.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: {
+          type: "string",
+          description: "Name of the file to compose a scene for.",
+        },
+        intent: {
+          type: "string",
+          enum: ["overview", "risk", "timeline", "metric", "parties", "obligations", "trend", "comparison", "custom"],
+          description:
+            "What the scene should focus on. 'overview' produces a multi-fragment summary; the others narrow to a single dimension.",
+        },
+        question: {
+          type: "string",
+          description:
+            "Optional natural-language question. When provided, the answer is shown in a summary fragment alongside the intent-driven visuals.",
+        },
+      },
+      required: ["file_name", "intent"],
+    },
+  },
+  {
+    type: "function",
+    name: "query_document_v2",
+    description:
+      "PHASE 1 RAG-based question answering for narrative documents. PREFER THIS over `query_document` when the file_uploaded message says `has_passages=true` (i.e. the document was embedded at upload time). Retrieves the most relevant passages from the document via semantic search and answers the question grounded in those exact passages. Returns the answer + the cited passages (with page numbers). Much faster and more accurate than `query_document` for narrative content. Tabular files are NOT supported — use the tabular tools for those.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: {
+          type: "string",
+          description: "The name of the document to query.",
+        },
+        question: {
+          type: "string",
+          description:
+            "Natural-language question. Be specific — the narrower the question, the better the retrieval. For overview-style questions ('what is this about?'), use focus='general' and a broad question.",
+        },
+        focus: {
+          type: "string",
+          enum: ["general", "risks", "parties", "dates", "metrics", "obligations"],
+          description:
+            "Optional dimension hint that adjusts the answer's framing. 'general' is the default and works for most questions.",
+        },
+      },
+      required: ["file_name", "question"],
+    },
+  },
+  {
+    type: "function",
+    name: "query_document",
+    description:
+      "LEGACY narrative tool. Use this only when the file_uploaded message says `has_passages=false` (older uploads that haven't been embedded). For newer uploads, prefer `query_document_v2`. Same interface, slower and less accurate.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: {
+          type: "string",
+          description: "The name of the file to query.",
+        },
+        question: {
+          type: "string",
+          description:
+            "Natural-language question — what the user wants to know. Be specific. The narrower the question, the better the grounded answer.",
+        },
+        focus: {
+          type: "string",
+          enum: ["general", "risks", "parties", "dates", "metrics", "obligations"],
+          description:
+            "Optional focus area that narrows the extraction toward a specific dimension. Pick the one that best matches the question. Use 'general' if unsure.",
+        },
+      },
+      required: ["file_name", "question"],
+    },
+  },
 ];
 
 // ── Client-side tool execution ───────────────────────────
