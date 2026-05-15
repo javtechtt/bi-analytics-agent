@@ -1,0 +1,69 @@
+[
+  {
+    "id": "jpm-overview-01",
+    "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+    "tool": "query_document",
+    "category": "narrative-overview",
+    "question": "What is this document and what fiscal period does it cover?",
+    "focus": "general",
+    "expectedAnswerContains": [
+      "2025"
+    ],
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 60000
+  },
+  {
+    "id": "jpm-metrics-01",
+    "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+    "tool": "query_document",
+    "category": "narrative-metric",
+    "question": "What was the reported net income or revenue figure for the period?",
+    "focus": "metrics",
+    "expectedAnswerContains": [
+      "net income = $57",
+      "net revenue = $182"
+    ],
+    "expectedAnswerExcludes": [
+      "not provided",
+      "doesn't mention"
+    ],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "jpm-risks-01",
+    "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+    "tool": "query_document",
+    "category": "narrative-risk",
+    "question": "What are the principal risk factors discussed in the report?",
+    "focus": "risks",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "jpm-citation-01",
+    "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+    "tool": "query_document",
+    "category": "narrative-citation-precision",
+    "question": "Cite the specific page or section where the company's capital adequacy ratios are discussed.",
+    "focus": "metrics",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "jpm-bait-01",
+    "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "What did Goldman Sachs report in this document?",
+    "focus": "general",
+    "expectedAnswerContains": [
+      "this is JP Morgan",
+      "doesn't cover Goldman",
+      "not about Goldman",
+      "doesn't mention Goldman"
+    ],
+    "expectedAnswerExcludes": [
+      "Goldman Sachs reported"
+    ]
+  }
+]

@@ -40,3 +40,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 env
+
+# Eval fixtures (may contain proprietary content; not committed)
+/evals/fixtures/*
+!/evals/fixtures/README.md
+
+# Eval report artifacts (kept locally; committed selectively)
+/evals/reports/eval-*.json
+
+# Editor user-personal settings (e.g. Claude Code skip-permissions toggle)
+.vscode/

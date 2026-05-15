@@ -1,0 +1,80 @@
+[
+  {
+    "id": "msa-parties-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-parties",
+    "question": "Who are the parties to this agreement?",
+    "focus": "parties",
+    "expectedAnswerContains": [
+      "ProQuest",
+      "Business Machines"
+    ],
+    "expectedAnswerExcludes": [
+      "no parties",
+      "not specified"
+    ],
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 40000
+  },
+  {
+    "id": "msa-dates-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-dates",
+    "question": "What is the effective date of this agreement and how long does it last?",
+    "focus": "dates",
+    "expectedAnswerContains": [
+      "2005"
+    ],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "msa-obligations-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-obligations",
+    "question": "What are the main obligations of each party under this agreement?",
+    "focus": "obligations",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "msa-risks-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-risk",
+    "question": "What are the limitations of liability or indemnification clauses in this agreement?",
+    "focus": "risks",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "msa-termination-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-citation-precision",
+    "question": "Under what conditions can this agreement be terminated?",
+    "focus": "obligations",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "msa-bait-01",
+    "fixture": "tech-master-service-agreement.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "What is the exact monthly subscription fee specified in this agreement?",
+    "focus": "metrics",
+    "expectedAnswerContains": [
+      "doesn't specify",
+      "doesn't state",
+      "not mentioned",
+      "not in",
+      "doesn't include"
+    ],
+    "expectedAnswerExcludes": [
+      "$/month"
+    ]
+  }
+]

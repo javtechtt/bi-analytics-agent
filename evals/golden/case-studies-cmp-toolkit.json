@@ -1,0 +1,71 @@
+[
+  {
+    "id": "cmp-cs-overview-01",
+    "fixture": "cmp-toolkit-country-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-overview",
+    "question": "What is this document about?",
+    "focus": "general",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 40000
+  },
+  {
+    "id": "cmp-cs-countries-01",
+    "fixture": "cmp-toolkit-country-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-parties",
+    "question": "Which countries are covered in these case studies?",
+    "focus": "parties",
+    "expectedAnswerContains": [
+      "Rwanda",
+      "Central African Republic",
+      "Zimbabwe",
+      "Mozambique",
+      "Zambia",
+      "South Africa",
+      "Republic of Congo",
+      "Ethiopia",
+      "Nigeria"
+    ],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "cmp-cs-overview-detail-01",
+    "fixture": "cmp-toolkit-country-case-studies.pdf",
+    "tool": "compose_visual_scene",
+    "category": "narrative-scene-overview",
+    "question": "Give me an overview of this document with key findings.",
+    "focus": "general",
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 45000
+  },
+  {
+    "id": "cmp-cs-implied-01",
+    "fixture": "cmp-toolkit-country-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-implied",
+    "question": "Which country in the case studies appears to have the most successful outcome and why?",
+    "focus": "general",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "cmp-cs-bait-01",
+    "fixture": "cmp-toolkit-country-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "What did Switzerland do in this study? (note: only ask about countries actually in the doc)",
+    "focus": "general",
+    "expectedAnswerContains": [
+      "doesn't",
+      "not",
+      "not covered",
+      "isn't included",
+      "not in"
+    ],
+    "expectedAnswerExcludes": [
+      "Switzerland did"
+    ]
+  }
+]

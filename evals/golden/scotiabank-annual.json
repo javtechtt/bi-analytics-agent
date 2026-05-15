@@ -1,0 +1,55 @@
+[
+  {
+    "id": "scotia-overview-01",
+    "fixture": "scotiabank-annual-report-2025-en.pdf",
+    "tool": "query_document",
+    "category": "narrative-stress-test",
+    "question": "What is this document and what year does it cover?",
+    "focus": "general",
+    "expectedAnswerContains": [
+      "Annual Report",
+      "2025"
+    ],
+    "expectedMinConfidence": "low",
+    "maxLatencyMs": 90000,
+    "maxCostUsd": 0.50
+  },
+  {
+    "id": "scotia-metrics-01",
+    "fixture": "scotiabank-annual-report-2025-en.pdf",
+    "tool": "query_document",
+    "category": "narrative-stress-test",
+    "question": "What were the key financial highlights for the year?",
+    "focus": "metrics",
+    "expectedAnswerContains": [
+      "7.8",
+      "9.5",
+      "9.7",
+      "11.8",
+      "1.5",
+      "13.2"
+    ],
+    "expectedMinConfidence": "low",
+    "maxLatencyMs": 90000,
+    "maxCostUsd": 0.50
+  },
+  {
+    "id": "scotia-bait-01",
+    "fixture": "scotiabank-annual-report-2025-en.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "How much did Scotiabank spend on Mars exploration in 2025?",
+    "focus": "general",
+    "expectedAnswerContains": [
+      "doesn't mention",
+      "no information",
+      "not covered",
+      "doesn't say"
+    ],
+    "expectedAnswerExcludes": [
+      "spent $",
+      "Mars exploration"
+    ],
+    "maxLatencyMs": 90000
+  }
+]

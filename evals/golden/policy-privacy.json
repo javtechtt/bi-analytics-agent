@@ -1,0 +1,53 @@
+[
+  {
+    "id": "privacy-scope-01",
+    "fixture": "ttmns-privacy-policy.pdf",
+    "tool": "query_document",
+    "category": "narrative-overview",
+    "question": "What is the scope of this privacy policy and what does it govern?",
+    "focus": "general",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 30000
+  },
+  {
+    "id": "privacy-data-types-01",
+    "fixture": "ttmns-privacy-policy.pdf",
+    "tool": "query_document",
+    "category": "narrative-metric",
+    "question": "What types of personal data does this policy say are collected?",
+    "focus": "general",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "privacy-rights-01",
+    "fixture": "ttmns-privacy-policy.pdf",
+    "tool": "query_document",
+    "category": "narrative-obligations",
+    "question": "What rights does this policy give to users regarding their data?",
+    "focus": "obligations",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "privacy-third-parties-01",
+    "fixture": "ttmns-privacy-policy.pdf",
+    "tool": "query_document",
+    "category": "narrative-citation-precision",
+    "question": "Does this policy share data with third parties? If so, who and why?",
+    "focus": "parties",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "privacy-bait-01",
+    "fixture": "ttmns-privacy-policy.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "What is the company's annual revenue mentioned in this privacy policy?",
+    "focus": "metrics",
+    "expectedAnswerContains": ["doesn't say", "doesn't mention", "not in", "not covered"],
+    "expectedAnswerExcludes": ["$"]
+  }
+]

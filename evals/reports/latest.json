@@ -1,0 +1,1229 @@
+{
+  "runId": "run-2026-05-14T05-39-46-511Z",
+  "startedAt": "2026-05-14T05:39:46.511Z",
+  "finishedAt": "2026-05-14T05:45:13.477Z",
+  "totalQuestions": 29,
+  "skipped": 0,
+  "results": [
+    {
+      "question": {
+        "id": "cmp-cs-overview-01",
+        "fixture": "cmp-toolkit-country-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-overview",
+        "question": "What is this document about?",
+        "focus": "general",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 40000
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly summarizing the document's content and purpose.",
+        "latencyPass": true,
+        "actualLatencyMs": 8933,
+        "costPass": true,
+        "actualCostUsd": 0.006835,
+        "reasoningMode": "simple"
+      },
+      "answer": "This document is a resource guide featuring case studies on collaborative management partnerships (CMPs) for protected areas. It highlights how partnerships between governments, NGOs, and communities can conserve biodiversity, promote sustainable development, and improve local livelihoods in national parks across Africa. The guide shares lessons learned, goals, and outcomes from various CMPs to support effective and inclusive conservation efforts."
+    },
+    {
+      "question": {
+        "id": "cmp-cs-countries-01",
+        "fixture": "cmp-toolkit-country-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-parties",
+        "question": "Which countries are covered in these case studies?",
+        "focus": "parties",
+        "expectedAnswerContains": [
+          "Rwanda",
+          "Central African Republic",
+          "Zimbabwe",
+          "Mozambique",
+          "Zambia",
+          "South Africa",
+          "Republic of Congo",
+          "Ethiopia",
+          "Nigeria"
+        ],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 0.63,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "Zambia",
+          "Republic of Congo",
+          "Nigeria"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1,
+          5,
+          6,
+          7,
+          10,
+          11
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 0.7,
+        "judgeReasoning": "The answer includes most of the expected countries but incorrectly lists Tanzania, Uganda, Sudan, and Eritrea, which are not part of the expected content.",
+        "latencyPass": true,
+        "actualLatencyMs": 7917,
+        "costPass": true,
+        "actualCostUsd": 0.006415,
+        "reasoningMode": "simple"
+      },
+      "answer": "The case studies cover Rwanda, Tanzania, Uganda, Sudan, Eritrea, Ethiopia, Congo, Cameroon, Central African Republic, Mozambique, South Africa, and Zimbabwe."
+    },
+    {
+      "question": {
+        "id": "cmp-cs-overview-detail-01",
+        "fixture": "cmp-toolkit-country-case-studies.pdf",
+        "tool": "compose_visual_scene",
+        "category": "narrative-scene-overview",
+        "question": "Give me an overview of this document with key findings.",
+        "focus": "general",
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 45000
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          4,
+          5,
+          7,
+          9,
+          9,
+          10
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer provides a comprehensive overview of the document, addressing key findings and aspects related to conservation-management partnerships.",
+        "latencyPass": true,
+        "actualLatencyMs": 9144,
+        "costPass": true,
+        "actualCostUsd": 0.007227,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document highlights successful conservation-management partnerships (CMPs) across several African parks, showing significant growth in wildlife populations, community benefits, and employment. Key findings include major increases in operational budgets and staff, substantial investments in education and human development, and notable reductions in poaching. Community involvement and benefit-sharing are emphasized, with examples of increased tourism, local employment, and revenue for communities. Lessons learned stress the importance of stakeholder engagement, strong legal frameworks, government commitment, and adaptive management to address challenges like instability and external risks."
+    },
+    {
+      "question": {
+        "id": "cmp-cs-implied-01",
+        "fixture": "cmp-toolkit-country-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-implied",
+        "question": "Which country in the case studies appears to have the most successful outcome and why?",
+        "focus": "general",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          7
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer clearly identifies Mozambique as the country with the most successful outcome and provides specific reasons and data to support this claim.",
+        "latencyPass": true,
+        "actualLatencyMs": 16231,
+        "costPass": true,
+        "actualCostUsd": 0.018128,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What are the outcomes described for each country in the case studies?",
+          "What reasons are given for the success of each country in the case studies?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "Mozambique appears most successful because Gorongosa National Park restored wildlife from 15 000 to 90 000 animals (including a rise from around 200 to 781 elephants), invested over $1.78 million in human development for 200 000 people, and grew its operational budget from under $100 000 in 2004 to $13.7 million by 2020."
+    },
+    {
+      "question": {
+        "id": "cmp-cs-bait-01",
+        "fixture": "cmp-toolkit-country-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "What did Switzerland do in this study? (note: only ask about countries actually in the doc)",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "doesn't",
+          "not",
+          "not covered",
+          "isn't included",
+          "not in"
+        ],
+        "expectedAnswerExcludes": [
+          "Switzerland did"
+        ]
+      },
+      "score": 0.6000000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "not",
+          "not covered",
+          "isn't included",
+          "not in"
+        ],
+        "excludesPass": false,
+        "excludesViolations": [
+          "Switzerland did"
+        ],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer directly addresses the question by stating that the document does not provide information on Switzerland's actions in the study.",
+        "latencyPass": true,
+        "actualLatencyMs": 4728,
+        "costPass": true,
+        "actualCostUsd": 0.006232,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't say what Switzerland did in this study."
+    },
+    {
+      "question": {
+        "id": "verified-cs-overview-01",
+        "fixture": "verified-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-overview",
+        "question": "What is this document about and who are the case studies about?",
+        "focus": "general",
+        "expectedAnswerContains": [],
+        "expectedAnswerExcludes": [
+          "financial statement",
+          "tax return",
+          "I don't know"
+        ],
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 35000,
+        "maxCostUsd": 0.1
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly stating the document's focus on mortgage scenarios and listing the lenders involved in the case studies.",
+        "latencyPass": true,
+        "actualLatencyMs": 13052,
+        "costPass": true,
+        "actualCostUsd": 0.01801,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What is the main topic or subject of this document?",
+          "Who are the entities or organizations featured in the case studies in this document?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "This document analyzes five real-world non-QM and conventional mortgage scenarios by comparing lender guidelines and qualification strategies for various borrower profiles and property types. The case studies are validated against ten lenders: Logan Finance, A&D Mortgage, Acra Lending, All Star Credit, Activator/Accelerator, AmWest, EMET, Angel Oak, Voltage (Valere), and WS Conventional Overlays."
+    },
+    {
+      "question": {
+        "id": "verified-cs-parties-01",
+        "fixture": "verified-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-parties",
+        "question": "Which companies or organizations are featured?",
+        "focus": "parties",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer correctly lists the companies and organizations featured, fully addressing the question.",
+        "latencyPass": true,
+        "actualLatencyMs": 6228,
+        "costPass": true,
+        "actualCostUsd": 0.007808,
+        "reasoningMode": "simple"
+      },
+      "answer": "The companies and organizations featured are Logan Finance, A&D Mortgage, Acra Lending, All Star Credit, Activator/Accelerator, AmWest, EMET, Angel Oak, Voltage (Valere), and WS Conventional Overlays."
+    },
+    {
+      "question": {
+        "id": "verified-cs-risks-01",
+        "fixture": "verified-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-risk",
+        "question": "What challenges or problems were these companies facing before the solution was implemented?",
+        "focus": "risks",
+        "expectedAnswerContains": [],
+        "expectedAnswerExcludes": [
+          "no challenges mentioned",
+          "no risks found"
+        ],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          4,
+          5,
+          10,
+          10,
+          2
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer thoroughly addresses the challenges faced by the companies, detailing specific issues related to DTI ratios and lender requirements.",
+        "latencyPass": true,
+        "actualLatencyMs": 18890,
+        "costPass": true,
+        "actualCostUsd": 0.008725,
+        "reasoningMode": "simple"
+      },
+      "answer": "One company faced a problem where a high expense ratio on personal bank statements resulted in a debt-to-income (DTI) ratio of 93.7%, making the borrower ineligible for a loan; even with a CPA letter reducing the expense ratio, the DTI remained above the allowable maximum, requiring a switch to business statements, a larger down payment, or a co-borrower. Another company encountered challenges with high DTI (49.9%) exceeding many lender overlays, risking ineligibility unless a lender without restrictive overlays was found. Additionally, some lenders required a minimum DSCR or imposed overlays that made certain borrowers ineligible unless they increased rent, bought down the rate, or brought a larger down payment."
+    },
+    {
+      "question": {
+        "id": "verified-cs-metrics-01",
+        "fixture": "verified-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-metric",
+        "question": "What specific numeric results or outcomes are mentioned in any of the case studies?",
+        "focus": "metrics",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          2,
+          8
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer provides specific numeric results and outcomes from the case studies, addressing the question thoroughly.",
+        "latencyPass": true,
+        "actualLatencyMs": 16770,
+        "costPass": true,
+        "actualCostUsd": 0.027115,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What specific numeric results or outcomes are mentioned in the first case study?",
+          "What specific numeric results or outcomes are mentioned in the second case study?",
+          "What specific numeric results or outcomes are mentioned in the third case study?"
+        ],
+        "subAnswersCompleted": 3
+      },
+      "answer": "Case study 1 involves a $450,000 Texas single-family rental with a $360,000 loan (80% LTV), $2,400/mo rent, $3,243/mo PITIA and a DSCR of 0.74; the borrower has a 710 credit score and $38,916 in reserves. Case study 2 covers a $3.8 M purchase using 12-mo business deposits ($1,008,000 gross), a 50% expense ratio yielding $504,000 net/year ($42,000/mo), proposed PITIA ~$18,000, $3,200 other debts (total $21,200) for a 50.5% DTI; with a CPA letter lowering expenses to 30%, net rises to $58,800/mo and DTI falls to 36%, and the best outlet offers up to $4 M (70% LTV = $2.66 M). Case study 3 does not specify numeric outcomes."
+    },
+    {
+      "question": {
+        "id": "verified-cs-bait-01",
+        "fixture": "verified-case-studies.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "What was Tesla's market cap on December 31, 2019 according to this document?",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "doesn't say",
+          "doesn't contain",
+          "not mention",
+          "no information about",
+          "isn't covered"
+        ],
+        "expectedAnswerExcludes": [
+          "$"
+        ]
+      },
+      "score": 0.7500000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "doesn't contain",
+          "not mention",
+          "no information about",
+          "isn't covered"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer directly addresses the question by stating that the document does not provide the information requested.",
+        "latencyPass": true,
+        "actualLatencyMs": 4401,
+        "costPass": true,
+        "actualCostUsd": 0.007613,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't say."
+    },
+    {
+      "question": {
+        "id": "msa-parties-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-parties",
+        "question": "Who are the parties to this agreement?",
+        "focus": "parties",
+        "expectedAnswerContains": [
+          "ProQuest",
+          "Business Machines"
+        ],
+        "expectedAnswerExcludes": [
+          "no parties",
+          "not specified"
+        ],
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 40000
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          5,
+          2
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer clearly identifies both parties, ProQuest and Business Machines (IBM), and provides additional relevant details about their roles in the agreement.",
+        "latencyPass": true,
+        "actualLatencyMs": 6954,
+        "costPass": true,
+        "actualCostUsd": 0.006002,
+        "reasoningMode": "simple"
+      },
+      "answer": "The parties to this agreement are International Business Machines Corporation (IBM) and ProQuest Company, referred to as Client Parent and Supplier Parent, as well as their respective affiliates or subsidiaries acting as Client Contracting Party and Supplier Contracting Party in individual Service Agreements."
+    },
+    {
+      "question": {
+        "id": "msa-dates-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-dates",
+        "question": "What is the effective date of this agreement and how long does it last?",
+        "focus": "dates",
+        "expectedAnswerContains": [
+          "2005"
+        ],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          152,
+          153
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses both aspects of the question by providing the effective date and the duration of the agreement.",
+        "latencyPass": true,
+        "actualLatencyMs": 13050,
+        "costPass": true,
+        "actualCostUsd": 0.014267,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What is the effective date of this agreement?",
+          "How long does this agreement last?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "The Service Agreement is effective January 1, 2005. Its initial term runs until December 31, 2009. It will automatically renew for successive 12-month terms unless the Client gives written notice at least six months before the end of the then-current term. The term also extends until the Supplier completes any required Termination Assistance Services."
+    },
+    {
+      "question": {
+        "id": "msa-obligations-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-obligations",
+        "question": "What are the main obligations of each party under this agreement?",
+        "focus": "obligations",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          28,
+          24,
+          30,
+          118,
+          27
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer thoroughly outlines the main obligations of both parties under the agreement, addressing all key points.",
+        "latencyPass": true,
+        "actualLatencyMs": 22202,
+        "costPass": true,
+        "actualCostUsd": 0.018401,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What are the main obligations of [Party A] under this agreement?",
+          "What are the main obligations of [Party B] under this agreement?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "Under the agreement, both Client and Supplier must promptly notify and cooperate with each other on any breach, misuse or fraud relating to Third Party Agreements, continue to perform all unaffected obligations, and use commercially reasonable efforts to lift any Official Action or secure required third-party approvals. The Client must appoint a primary contract manager, provide office space, furnishings and utilities for project staff on its premises, approve Supplier agents’ access to its sites, and cover costs of consents, approvals or authorizations necessary under Third Party Agreements. The Supplier must ensure its agents comply with the Service Agreement, manage all payments and claims by those agents, abide by and administer any specified Third Party Agreements, provide materials development and integration services, adhere to safety rules and obtain necessary site-access approvals."
+    },
+    {
+      "question": {
+        "id": "msa-risks-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-risk",
+        "question": "What are the limitations of liability or indemnification clauses in this agreement?",
+        "focus": "risks",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          49,
+          52
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer thoroughly addresses the limitations of liability and indemnification clauses by detailing the exclusions and requirements specified in the agreement.",
+        "latencyPass": true,
+        "actualLatencyMs": 19397,
+        "costPass": true,
+        "actualCostUsd": 0.019607,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What are the limitations of liability clauses in this agreement?",
+          "What are the limitations of indemnification clauses in this agreement?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "The Agreement bars either party from claiming indirect, special or consequential damages or any loss of income, profits or savings in connection with performance under any Service Agreement (Sections 27.6–27.7).  Those exclusions do not apply to indemnification claims (Sections 28.1–28.3), to liabilities under Article XIII or Sections 15.1, 15.2, 15.3 or 15.6, nor to injunctive relief for breaches of Articles XIII or XV.  Under Section 27.1, the indemnitor must reimburse the other party’s costs and expenses in enforcing its indemnity, with payment made in the Service Agreement currency at the Financial Times closing mid-point spot rate for the first Monday of the month in which the event occurred (Section 27.2)."
+    },
+    {
+      "question": {
+        "id": "msa-termination-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-citation-precision",
+        "question": "Under what conditions can this agreement be terminated?",
+        "focus": "obligations",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          148,
+          148,
+          149
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by detailing the specific conditions under which the agreement can be terminated.",
+        "latencyPass": true,
+        "actualLatencyMs": 8745,
+        "costPass": true,
+        "actualCostUsd": 0.006293,
+        "reasoningMode": "simple"
+      },
+      "answer": "The agreement can be terminated by the Client at its discretion with written notice for convenience, in the event of a sale of substantially all assets or significant stock of the Supplier that creates substantial uncertainty, for repeated failure to perform obligations, for failure to meet service levels, or if the Supplier fails to complete the Transition by specified deadlines. It may also terminate to exercise benchmarking rights or pursuant to certain sections of Exhibit B to the MSA."
+    },
+    {
+      "question": {
+        "id": "msa-bait-01",
+        "fixture": "tech-master-service-agreement.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "What is the exact monthly subscription fee specified in this agreement?",
+        "focus": "metrics",
+        "expectedAnswerContains": [
+          "doesn't specify",
+          "doesn't state",
+          "not mentioned",
+          "not in",
+          "doesn't include"
+        ],
+        "expectedAnswerExcludes": [
+          "$/month"
+        ]
+      },
+      "score": 0.7500000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "doesn't state",
+          "not mentioned",
+          "not in",
+          "doesn't include"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly stating that the document does not specify the exact monthly subscription fee.",
+        "latencyPass": true,
+        "actualLatencyMs": 3961,
+        "costPass": true,
+        "actualCostUsd": 0.005426,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't specify the exact monthly subscription fee."
+    },
+    {
+      "question": {
+        "id": "jpm-overview-01",
+        "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+        "tool": "query_document",
+        "category": "narrative-overview",
+        "question": "What is this document and what fiscal period does it cover?",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "2025"
+        ],
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 60000
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          247,
+          83,
+          83
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer correctly identifies the document as JPMorgan Chase & Co.’s 2025 Form 10-K and specifies the fiscal period it covers.",
+        "latencyPass": true,
+        "actualLatencyMs": 10510,
+        "costPass": true,
+        "actualCostUsd": 0.015335,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "What is the title or type of this document?",
+          "What fiscal period does this document cover?"
+        ],
+        "subAnswersCompleted": 2
+      },
+      "answer": "This document is JPMorgan Chase & Co.’s 2025 Form 10-K. It covers the fiscal years ended December 31, 2025, 2024, and 2023."
+    },
+    {
+      "question": {
+        "id": "jpm-metrics-01",
+        "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+        "tool": "query_document",
+        "category": "narrative-metric",
+        "question": "What was the reported net income or revenue figure for the period?",
+        "focus": "metrics",
+        "expectedAnswerContains": [
+          "net income = $57",
+          "net revenue = $182"
+        ],
+        "expectedAnswerExcludes": [
+          "not provided",
+          "doesn't mention"
+        ],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 0.58,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "net income = $57",
+          "net revenue = $182"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          5,
+          83
+        ],
+        "confidencePass": false,
+        "actualConfidence": "low",
+        "judgeScore": 0.7,
+        "judgeReasoning": "The answer provides the net income figure correctly but has a minor discrepancy in the revenue figure compared to the expected content.",
+        "latencyPass": true,
+        "actualLatencyMs": 8705,
+        "costPass": true,
+        "actualCostUsd": 0.006939,
+        "reasoningMode": "simple"
+      },
+      "answer": "Net income for 2025 was $57.0 billion and revenue was $185.6 billion. Another passage reports total net revenue for 2025 as $182.4 billion, showing a slight discrepancy between figures."
+    },
+    {
+      "question": {
+        "id": "jpm-risks-01",
+        "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+        "tool": "query_document",
+        "category": "narrative-risk",
+        "question": "What are the principal risk factors discussed in the report?",
+        "focus": "risks",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          177,
+          177,
+          179,
+          165
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly listing and explaining the principal risk factors discussed in the report.",
+        "latencyPass": true,
+        "actualLatencyMs": 7901,
+        "costPass": true,
+        "actualCostUsd": 0.005936,
+        "reasoningMode": "simple"
+      },
+      "answer": "The principal risk factors discussed are climate risk (including physical and transition risks), operational risk (including compliance, conduct, legal, estimations and model risk), market risk, and firmwide resiliency risk such as disruptions from health emergencies, severe weather, cyberattacks, and third-party failures."
+    },
+    {
+      "question": {
+        "id": "jpm-citation-01",
+        "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+        "tool": "query_document",
+        "category": "narrative-citation-precision",
+        "question": "Cite the specific page or section where the company's capital adequacy ratios are discussed.",
+        "focus": "metrics",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          325,
+          326
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer correctly cites the specific pages and sections where the company's capital adequacy ratios are discussed.",
+        "latencyPass": true,
+        "actualLatencyMs": 5938,
+        "costPass": true,
+        "actualCostUsd": 0.006927,
+        "reasoningMode": "simple"
+      },
+      "answer": "The company's capital adequacy ratios are discussed in Note 27 – Regulatory capital on page 325 and in the CECL Regulatory Capital Transition section on page 326."
+    },
+    {
+      "question": {
+        "id": "jpm-bait-01",
+        "fixture": "jp-morgan-multi-page-table-annual-report-2025.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "What did Goldman Sachs report in this document?",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "this is JP Morgan",
+          "doesn't cover Goldman",
+          "not about Goldman",
+          "doesn't mention Goldman"
+        ],
+        "expectedAnswerExcludes": [
+          "Goldman Sachs reported"
+        ]
+      },
+      "score": 0.6000000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "this is JP Morgan",
+          "doesn't cover Goldman",
+          "not about Goldman",
+          "doesn't mention Goldman"
+        ],
+        "excludesPass": false,
+        "excludesViolations": [
+          "Goldman Sachs reported"
+        ],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly stating that the document does not cover Goldman Sachs and provides relevant context.",
+        "latencyPass": true,
+        "actualLatencyMs": 7476,
+        "costPass": true,
+        "actualCostUsd": 0.006673,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't say what Goldman Sachs reported. The provided passages contain financial data and commentary for another firm, but there is no mention of Goldman Sachs' specific report or results."
+    },
+    {
+      "question": {
+        "id": "privacy-scope-01",
+        "fixture": "ttmns-privacy-policy.pdf",
+        "tool": "query_document",
+        "category": "narrative-overview",
+        "question": "What is the scope of this privacy policy and what does it govern?",
+        "focus": "general",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium",
+        "maxLatencyMs": 30000
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1,
+          1
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the scope of the privacy policy and details what it governs, including the collection, use, and protection of personal information.",
+        "latencyPass": true,
+        "actualLatencyMs": 5093,
+        "costPass": true,
+        "actualCostUsd": 0.005416,
+        "reasoningMode": "simple"
+      },
+      "answer": "This privacy policy governs the collection, use, and protection of personal information supplied through the Ministry of National Security's travel document system in Trinidad and Tobago. It covers how personal data is classified, collected, used, kept confidential, and shared, and is subject to the Data Protection Act, Chapter 22:04. The policy specifically addresses awareness, choice, security, and oversight regarding personally identifiable information provided online by applicants."
+    },
+    {
+      "question": {
+        "id": "privacy-data-types-01",
+        "fixture": "ttmns-privacy-policy.pdf",
+        "tool": "query_document",
+        "category": "narrative-metric",
+        "question": "What types of personal data does this policy say are collected?",
+        "focus": "general",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1,
+          1
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer comprehensively lists the types of personal data collected as specified in the policy, addressing all aspects of the question.",
+        "latencyPass": true,
+        "actualLatencyMs": 6465,
+        "costPass": true,
+        "actualCostUsd": 0.005533,
+        "reasoningMode": "simple"
+      },
+      "answer": "The policy states that collected personal data includes name, date of birth, residential and email address, phone numbers, information relating to race, nationality or ethnic origin, religion, age, marital status, education, medical, criminal or employment history and earnings, address and contact number, any identifying number or symbol, as well as technical data such as IP address, login data, browser type and version, operating system, platform, and information about website usage."
+    },
+    {
+      "question": {
+        "id": "privacy-rights-01",
+        "fixture": "ttmns-privacy-policy.pdf",
+        "tool": "query_document",
+        "category": "narrative-obligations",
+        "question": "What rights does this policy give to users regarding their data?",
+        "focus": "obligations",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          1,
+          1,
+          2
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by clearly outlining the rights users have regarding their data, including confidentiality and the need for user permission for unrelated uses.",
+        "latencyPass": true,
+        "actualLatencyMs": 4708,
+        "costPass": true,
+        "actualCostUsd": 0.005294,
+        "reasoningMode": "simple"
+      },
+      "answer": "Users have the right to have their personal information treated as confidential, and MNS will not use or share their personally identifiable information in ways unrelated to the stated purposes without first informing or obtaining the user's permission. The policy also makes users aware of the choices they can make about how their information is collected and used."
+    },
+    {
+      "question": {
+        "id": "privacy-third-parties-01",
+        "fixture": "ttmns-privacy-policy.pdf",
+        "tool": "query_document",
+        "category": "narrative-citation-precision",
+        "question": "Does this policy share data with third parties? If so, who and why?",
+        "focus": "parties",
+        "expectedAnswerContains": [],
+        "expectedMinConfidence": "medium"
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          2
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer fully addresses the question by confirming that data is shared with specific entities and explaining the reasons and conditions for such sharing.",
+        "latencyPass": true,
+        "actualLatencyMs": 9829,
+        "costPass": true,
+        "actualCostUsd": 0.016323,
+        "reasoningMode": "complex",
+        "subQuestions": [
+          "Does the policy state that data is shared with third parties?",
+          "Who are the third parties with whom data is shared, according to the policy?",
+          "For what purposes does the policy state data is shared with third parties?"
+        ],
+        "subAnswersCompleted": 3
+      },
+      "answer": "Yes. MNS may share your information with other Ministries within the Government of Trinidad and Tobago, law enforcement agencies, and its authorized service providers who act as data processors for MNS’s benefit. These service providers are contractually bound to use your personal data only for MNS-authorized purposes and to maintain confidentiality. Apart from these cases, MNS will not sell, rent, license, or trade your personal information to other third parties."
+    },
+    {
+      "question": {
+        "id": "privacy-bait-01",
+        "fixture": "ttmns-privacy-policy.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "What is the company's annual revenue mentioned in this privacy policy?",
+        "focus": "metrics",
+        "expectedAnswerContains": [
+          "doesn't say",
+          "doesn't mention",
+          "not in",
+          "not covered"
+        ],
+        "expectedAnswerExcludes": [
+          "$"
+        ]
+      },
+      "score": 0.7500000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "doesn't mention",
+          "not in",
+          "not covered"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer directly addresses the question by stating that the document does not provide the company's annual revenue.",
+        "latencyPass": true,
+        "actualLatencyMs": 2689,
+        "costPass": true,
+        "actualCostUsd": 0.004664,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't say."
+    },
+    {
+      "question": {
+        "id": "scotia-overview-01",
+        "fixture": "scotiabank-annual-report-2025-en.pdf",
+        "tool": "query_document",
+        "category": "narrative-stress-test",
+        "question": "What is this document and what year does it cover?",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "Annual Report",
+          "2025"
+        ],
+        "expectedMinConfidence": "low",
+        "maxLatencyMs": 90000,
+        "maxCostUsd": 0.5
+      },
+      "score": 1,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": true,
+        "containsMissing": [],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          18
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer correctly identifies the document as the 2025 Scotiabank Annual Report and specifies the year it covers.",
+        "latencyPass": true,
+        "actualLatencyMs": 8949,
+        "costPass": true,
+        "actualCostUsd": 0.006146,
+        "reasoningMode": "simple"
+      },
+      "answer": "This document is the 2025 Scotiabank Annual Report, covering the financial year ended October 31, 2025."
+    },
+    {
+      "question": {
+        "id": "scotia-metrics-01",
+        "fixture": "scotiabank-annual-report-2025-en.pdf",
+        "tool": "query_document",
+        "category": "narrative-stress-test",
+        "question": "What were the key financial highlights for the year?",
+        "focus": "metrics",
+        "expectedAnswerContains": [
+          "7.8",
+          "9.5",
+          "9.7",
+          "11.8",
+          "1.5",
+          "13.2"
+        ],
+        "expectedMinConfidence": "low",
+        "maxLatencyMs": 90000,
+        "maxCostUsd": 0.5
+      },
+      "score": 0.5100000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "9.5",
+          "9.7",
+          "11.8",
+          "13.2"
+        ],
+        "excludesPass": true,
+        "excludesViolations": [],
+        "citationPass": true,
+        "citationActualPages": [
+          20,
+          30,
+          34
+        ],
+        "confidencePass": true,
+        "actualConfidence": "high",
+        "judgeScore": 0.4,
+        "judgeReasoning": "The answer provides some financial figures but misses key expected content and does not fully address the question about key highlights.",
+        "latencyPass": true,
+        "actualLatencyMs": 6900,
+        "costPass": true,
+        "actualCostUsd": 0.006753,
+        "reasoningMode": "simple"
+      },
+      "answer": "Net income was about $7.8 billion, down 2% from the previous year. Total revenue rose to about $37.7 billion, with net interest income at $21.5 billion and non-interest income at $16.2 billion. Higher non-interest expenses, income taxes, and provisions for credit losses contributed to the decline in net income despite increased revenues."
+    },
+    {
+      "question": {
+        "id": "scotia-bait-01",
+        "fixture": "scotiabank-annual-report-2025-en.pdf",
+        "tool": "query_document",
+        "category": "narrative-hallucination-bait",
+        "question": "How much did Scotiabank spend on Mars exploration in 2025?",
+        "focus": "general",
+        "expectedAnswerContains": [
+          "doesn't mention",
+          "no information",
+          "not covered",
+          "doesn't say"
+        ],
+        "expectedAnswerExcludes": [
+          "spent $",
+          "Mars exploration"
+        ],
+        "maxLatencyMs": 90000
+      },
+      "score": 0.6000000000000001,
+      "breakdown": {
+        "toolSucceeded": true,
+        "containsPass": false,
+        "containsMissing": [
+          "doesn't mention",
+          "no information",
+          "not covered"
+        ],
+        "excludesPass": false,
+        "excludesViolations": [
+          "Mars exploration"
+        ],
+        "citationPass": true,
+        "citationActualPages": [],
+        "confidencePass": true,
+        "actualConfidence": "low",
+        "judgeScore": 1,
+        "judgeReasoning": "The answer directly addresses the question and includes the expected content.",
+        "latencyPass": true,
+        "actualLatencyMs": 5629,
+        "costPass": true,
+        "actualCostUsd": 0.005781,
+        "reasoningMode": "simple"
+      },
+      "answer": "The document doesn't say how much Scotiabank spent on Mars exploration in 2025."
+    }
+  ],
+  "aggregate": {
+    "overallAccuracy": 0.8886206896551725,
+    "judgeAccuracy": 0.9586206896551723,
+    "containsPassRate": 0.6896551724137931,
+    "excludesPassRate": 0.896551724137931,
+    "citationPassRate": 1,
+    "p50LatencyMs": 7917,
+    "p95LatencyMs": 19397,
+    "totalCostUsd": 0.28182399999999996,
+    "avgCostUsd": 0.00971806896551724,
+    "complexRoutingRate": 0.27586206896551724
+  }
+}

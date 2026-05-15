@@ -1,0 +1,56 @@
+[
+  {
+    "id": "verified-cs-overview-01",
+    "fixture": "verified-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-overview",
+    "question": "What is this document about and who are the case studies about?",
+    "focus": "general",
+    "expectedAnswerContains": [],
+    "expectedAnswerExcludes": ["financial statement", "tax return", "I don't know"],
+    "expectedMinConfidence": "medium",
+    "maxLatencyMs": 35000,
+    "maxCostUsd": 0.10
+  },
+  {
+    "id": "verified-cs-parties-01",
+    "fixture": "verified-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-parties",
+    "question": "Which companies or organizations are featured?",
+    "focus": "parties",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "verified-cs-risks-01",
+    "fixture": "verified-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-risk",
+    "question": "What challenges or problems were these companies facing before the solution was implemented?",
+    "focus": "risks",
+    "expectedAnswerContains": [],
+    "expectedAnswerExcludes": ["no challenges mentioned", "no risks found"],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "verified-cs-metrics-01",
+    "fixture": "verified-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-metric",
+    "question": "What specific numeric results or outcomes are mentioned in any of the case studies?",
+    "focus": "metrics",
+    "expectedAnswerContains": [],
+    "expectedMinConfidence": "medium"
+  },
+  {
+    "id": "verified-cs-bait-01",
+    "fixture": "verified-case-studies.pdf",
+    "tool": "query_document",
+    "category": "narrative-hallucination-bait",
+    "question": "What was Tesla's market cap on December 31, 2019 according to this document?",
+    "focus": "general",
+    "expectedAnswerContains": ["doesn't say", "doesn't contain", "not mention", "no information about", "isn't covered"],
+    "expectedAnswerExcludes": ["$"]
+  }
+]
