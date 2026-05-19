@@ -19,7 +19,7 @@
 import { findDocumentByFileName } from "@/lib/documents/store";
 import { retrievePassages, type Passage } from "./retrieve";
 import { rerankPassages } from "./rerank";
-import { composeAnswerFromPassages, type AnswerFocus } from "./answer";
+import { composeAnswerFromPassages, type AnswerFocus, type ChartableData } from "./answer";
 import { verifyAnswer } from "@/lib/extraction/verifier";
 import { planQuestionComplexity } from "@/lib/reasoning/plan";
 import { runComplexAnswer } from "@/lib/reasoning/orchestrator";
@@ -71,6 +71,10 @@ export interface QueryDocumentV2Result {
     focus?: string;
     rerankerRan: boolean;
     caveat?: string;
+    /** Structured numeric data the composer extracted, or null when the
+     *  answer is purely qualitative. Drives KPI cards + (when kind !=
+     *  "kpi_only") a chart in the scene composer. */
+    chartable?: ChartableData;
     /** Phase 6 — "simple" = single retrieve+compose; "complex" = decomposed
      *  into sub-questions and synthesized with the reasoning model. */
     reasoningMode: "simple" | "complex";
@@ -132,6 +136,7 @@ export async function runQueryDocumentV2(
     citedPassages: Passage[];
     confidence: "high" | "medium" | "low";
     caveat?: string;
+    chartable?: ChartableData;
   };
 
   let composed: ComposedShape;
@@ -169,6 +174,7 @@ export async function runQueryDocumentV2(
           citedPassages: complex.citedPassages,
           confidence: complex.confidence,
           caveat: complex.caveat,
+          chartable: complex.chartable,
         },
         subAnswersCompleted: complex.subAnswersCompleted,
       };
@@ -311,6 +317,7 @@ export async function runQueryDocumentV2(
       focus,
       rerankerRan,
       caveat: effectiveCaveat,
+      chartable: composed.chartable,
       reasoningMode,
       subQuestions: subQuestionsRun,
       subAnswersCompleted,

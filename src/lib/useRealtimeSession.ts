@@ -232,6 +232,14 @@ interface V2DocumentResponse {
   focus?: string;
   rerankerRan?: boolean;
   caveat?: string;
+  /** Optional structured numeric data the composer extracted for the
+   *  scene composer to render as KPI cards + (optionally) a chart. */
+  chartable?: {
+    kind: "bar" | "pie" | "line" | "area" | "kpi_only";
+    title: string;
+    unit: string;
+    series: Array<{ label: string; value: number; sourcePage: number | null }>;
+  };
   /** Phase 6 — "simple" (single-pass RAG) or "complex" (decomposed). */
   reasoningMode?: "simple" | "complex";
   /** Phase 6 — sub-questions used in a complex answer. */
@@ -329,6 +337,7 @@ function bridgeToolResultToScene(
         citedPassageIds: dr.citations.map((c) => c.passageId),
         caveat: dr.caveat,
         drilldowns: data.drilldowns,
+        chartable: dr.chartable,
       });
     }
 

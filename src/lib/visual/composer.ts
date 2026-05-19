@@ -78,6 +78,15 @@ export interface ComposePassageSceneInput {
   citedPassageIds: string[];
   caveat?: string;
   drilldowns?: string[];
+  /** Optional structured numeric data extracted from the answer. When
+   *  present, drives KPI cards and (unless kind="kpi_only") a chart
+   *  fragment positioned right after the summary. */
+  chartable?: {
+    kind: "bar" | "pie" | "line" | "area" | "kpi_only";
+    title: string;
+    unit: string;
+    series: Array<{ label: string; value: number; sourcePage: number | null }>;
+  };
 }
 
 export function composeSceneFromPassages(
@@ -95,6 +104,7 @@ export function composeSceneFromPassages(
     citedPassageIds,
     caveat,
     drilldowns,
+    chartable,
   } = input;
 
   const fragments: VisualFragment[] = [];
@@ -109,7 +119,45 @@ export function composeSceneFromPassages(
     })
   );
 
-  // 2. Doc preview — cited passages first (highlighted), then up to 3 supporting
+  // 2. Chartable data (when present). Position right after the summary so
+  //    the visual lands while the voice agent is still narrating the answer.
+  //    Two fragments come out: a KPI row (always, since "headline numbers
+  //    on cards" is universally useful) and — unless kind=="kpi_only" —
+  //    a chart of the same series.
+  if (chartable && chartable.series.length > 0) {
+    fragments.push(
+      kpiFragment({
+        cards: chartable.series.slice(0, 6).map((s) => ({
+          label: s.label,
+          value: formatChartValue(s.value, chartable.unit),
+          column: s.label,
+          isPercent: chartable.unit === "%" || chartable.unit.toLowerCase() === "percent",
+          rawValue: s.value,
+        })),
+      })
+    );
+
+    if (chartable.kind !== "kpi_only" && chartable.series.length >= 2) {
+      fragments.push(
+        chartFragment({
+          chart_type: chartable.kind,
+          title: chartable.title,
+          // Recharts wants `{ label, value }` rows with the value keyed by
+          // the series name. We use a single "value" series — the chart is
+          // categorical (one bar/slice/point per series entry).
+          data: chartable.series.map((s) => ({
+            label: s.label,
+            value: s.value,
+          })),
+          x_label: "",
+          y_label: chartable.unit,
+          series: ["value"],
+        })
+      );
+    }
+  }
+
+  // 3. Doc preview — cited passages first (highlighted), then up to 3 supporting
   //    passages (dimmed) for context.
   if (passages.length > 0 && documentId) {
     const citedFirst = passages.filter((p) => cited.has(p.passageId));
@@ -131,7 +179,7 @@ export function composeSceneFromPassages(
     );
   }
 
-  // 3. One callout per cited passage (max 2) for emphasis. Keeps scenes tight.
+  // 4. One callout per cited passage (max 2) for emphasis. Keeps scenes tight.
   for (const p of passages.filter((pp) => cited.has(pp.passageId)).slice(0, 2)) {
     fragments.push(
       calloutFragment({
@@ -575,6 +623,42 @@ function severityFromConfidence(c: number): "high" | "medium" | "low" {
   if (c >= 0.85) return "high";
   if (c >= 0.5) return "medium";
   return "low";
+}
+
+/**
+ * Format a chartable.series value into a KPI card's display string. Handles
+ * the common units we expect from narrative extraction (dollars in various
+ * magnitudes, percentages, plain counts) without inventing precision.
+ */
+function formatChartValue(v: number, unit: string): string {
+  const u = (unit || "").toLowerCase();
+  const isMoney = /\$|usd|dollar|cad|eur|gbp/.test(u);
+  const isPercent = u === "%" || u === "percent";
+  const abs = Math.abs(v);
+
+  // Pick magnitude suffix from the raw value, not from the unit — the unit
+  // may already say "$ billions" in which case v=2.4 means 2.4B and we
+  // shouldn't add another B suffix.
+  const unitImpliesBillions = /billion/.test(u);
+  const unitImpliesMillions = /million/.test(u);
+  const unitImpliesThousands = /thousand/.test(u);
+
+  let body: string;
+  if (unitImpliesBillions || unitImpliesMillions || unitImpliesThousands) {
+    body = Number.isInteger(v) ? String(v) : v.toFixed(2);
+  } else if (abs >= 1_000_000_000) {
+    body = (v / 1_000_000_000).toFixed(1) + "B";
+  } else if (abs >= 1_000_000) {
+    body = (v / 1_000_000).toFixed(1) + "M";
+  } else if (abs >= 1_000) {
+    body = (v / 1_000).toFixed(1) + "K";
+  } else {
+    body = Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+
+  if (isPercent) return body + "%";
+  if (isMoney) return "$" + body;
+  return unit ? `${body} ${unit}` : body;
 }
 
 function formatMetric(v: number, unit?: string): string {
