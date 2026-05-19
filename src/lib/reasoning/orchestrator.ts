@@ -406,6 +406,15 @@ Synthesize the final answer to the original question.`;
         };
       }
     }
+    console.log(
+      `[orchestrator/synth] chartable: ${
+        chartable
+          ? `${chartable.kind} "${chartable.title}" (${chartable.series.length} entries)`
+          : parsed.chartable === null
+            ? "null"
+            : "missing"
+      }`
+    );
 
     return {
       answer: parsed.answer,

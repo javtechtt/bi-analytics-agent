@@ -124,6 +124,13 @@ export function composeSceneFromPassages(
   //    Two fragments come out: a KPI row (always, since "headline numbers
   //    on cards" is universally useful) and — unless kind=="kpi_only" —
   //    a chart of the same series.
+  console.log(
+    `[scene/passages] chartable input: ${
+      chartable
+        ? `${chartable.kind} (${chartable.series.length} entries) → will emit KPI${chartable.kind !== "kpi_only" && chartable.series.length >= 2 ? " + chart" : ""}`
+        : "absent → no KPI/chart fragments"
+    }`
+  );
   if (chartable && chartable.series.length > 0) {
     fragments.push(
       kpiFragment({

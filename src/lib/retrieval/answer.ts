@@ -259,6 +259,15 @@ Answer the question using only these passages.`;
       };
     }
   }
+  console.log(
+    `[composer/v2] chartable: ${
+      chartable
+        ? `${chartable.kind} "${chartable.title}" (${chartable.series.length} entries, unit="${chartable.unit}")`
+        : parsed.chartable === null
+          ? "null (model explicitly chose no chart)"
+          : "missing (model omitted field entirely)"
+    }`
+  );
 
   return {
     answer: parsed.answer,
