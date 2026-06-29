@@ -165,7 +165,16 @@ function SceneCard({
 
       <div className={cn("mt-4", layoutClassName(scene.layout))}>
         {scene.fragments.map((frag) => (
-          <div key={frag.id} className={spanClassFor(scene.layout, frag)}>
+          <div
+            key={frag.id}
+            className={cn(
+              spanClassFor(scene.layout, frag),
+              // Charts render into a Recharts ResponsiveContainer (height:100%),
+              // which collapses to 0 unless an ancestor has a resolved height.
+              // Every other fragment is content-sized, so only charts need this.
+              frag.kind === "chart" && chartHeightClass(scene.layout)
+            )}
+          >
             <FragmentRenderer fragment={frag} onRemoveScene={onClose} />
           </div>
         ))}
@@ -206,6 +215,22 @@ function layoutClassName(layout: SceneLayout): string {
     case "split":      return "grid grid-cols-1 gap-3 lg:grid-cols-2";
     case "stack":      return "flex flex-col gap-3";
     case "dashboard":  return "grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3";
+  }
+}
+
+/**
+ * Concrete height for chart fragments. Recharts' ResponsiveContainer needs a
+ * parent with a resolved height or it renders at 0px — the legacy ChartStage
+ * gave charts explicit heights (h-[50vh]/h-[24vh]); SceneStage must too.
+ * Taller for a single spotlight chart; shorter inside multi-column grids.
+ */
+function chartHeightClass(layout: SceneLayout): string {
+  switch (layout) {
+    case "spotlight": return "h-[44vh] min-h-[320px]";
+    case "split":     return "h-80";
+    case "grid":      return "h-72";
+    case "dashboard": return "h-64";
+    case "stack":     return "h-72";
   }
 }
 
