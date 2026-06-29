@@ -25,7 +25,7 @@
  *     trivial (single insert, no read).
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 import { currentTrace, registerPendingWrite } from "./trace";
 
 export type ProgressKind = "phase" | "info" | "warn";
@@ -45,13 +45,11 @@ export function emitProgress(kind: ProgressKind, message: string): void {
   }
   const write = (async () => {
     try {
-      const sb = createServerSupabase();
-      await sb.from("tool_progress").insert({
-        trace_id: ctx.traceId,
-        user_id: ctx.userId,
-        kind,
-        message,
-      });
+      const sql = getSql();
+      await sql`
+        insert into tool_progress (trace_id, user_id, kind, message)
+        values (${ctx.traceId}, ${ctx.userId}, ${kind}, ${message})
+      `;
     } catch (err) {
       console.warn(
         "[telemetry/progress] insert failed (continuing):",

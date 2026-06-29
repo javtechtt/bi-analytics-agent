@@ -21,7 +21,7 @@
  *   - query_document_v2 on a doc that hasn't been embedded (auto-falls back).
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 import { findDocumentByFileName } from "@/lib/documents/store";
 import { isNarrativeType } from "@/lib/ingestion/classifier";
 
@@ -71,14 +71,13 @@ async function classifyFile(fileName: string, userId: string): Promise<FileKind>
   if (isNarrativeType(type as Parameters<typeof isNarrativeType>[0])) {
     // Look up has_passages directly on the documents row — the cached
     // extraction may not carry it.
-    const sb = createServerSupabase();
-    const { data } = await sb
-      .from("documents")
-      .select("has_passages")
-      .eq("id", record.documentId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    const hasPassages = data?.has_passages === true;
+    const sql = getSql();
+    const rows = (await sql`
+      select has_passages from documents
+      where id = ${record.documentId} and user_id = ${userId}
+      limit 1
+    `) as Array<{ has_passages: boolean }>;
+    const hasPassages = rows[0]?.has_passages === true;
     return {
       kind: "narrative",
       hasPassages,

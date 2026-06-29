@@ -15,7 +15,7 @@
  * Phase 7's SSE streaming will surface progress to the voice agent.
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toVectorLiteral, buildValues } from "@/lib/db";
 import { instrumented } from "@/lib/telemetry/trace";
 import { semanticChunk, chunkStats } from "./chunker";
 import type { DocumentExtraction } from "@/lib/documents/types";
@@ -76,48 +76,61 @@ export async function embedDocument(input: EmbedDocumentInput): Promise<EmbedDoc
   }
 
   // 3. Persist (transactional in spirit: delete old, insert new)
-  const sb = createServerSupabase();
-  const { error: deleteErr } = await sb
-    .from("passages")
-    .delete()
-    .eq("document_id", documentId);
-  if (deleteErr) {
-    throw new Error(`embedDocument: failed to clear old passages — ${deleteErr.message}`);
+  const sql = getSql();
+  try {
+    await sql`delete from passages where document_id = ${documentId}`;
+  } catch (err) {
+    throw new Error(
+      `embedDocument: failed to clear old passages — ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
-  // Bulk insert. Supabase's batch insert handles up to ~1000 rows per call;
-  // we cap at 500 to stay under PostgREST payload limits.
-  const rows = chunks.map((c, i) => ({
-    document_id: documentId,
-    user_id: userId,
-    chunk_index: c.chunkIndex,
-    page_start: c.pageStart,
-    page_end: c.pageEnd,
-    text: c.text,
-    heading: c.heading,
-    char_offset: c.charOffset,
-    token_count: c.tokenCount,
-    embedding: vectors[i],
-  }));
-
-  const INSERT_BATCH = 500;
-  for (let i = 0; i < rows.length; i += INSERT_BATCH) {
-    const slice = rows.slice(i, i + INSERT_BATCH);
-    const { error: insertErr } = await sb.from("passages").insert(slice);
-    if (insertErr) {
-      throw new Error(`embedDocument: passages insert failed at batch ${i} — ${insertErr.message}`);
+  // Bulk insert via multi-row VALUES. Each embedding placeholder is cast
+  // ::vector(1536). Batches are smaller than the Supabase path used (100 vs
+  // 500) because each row carries a ~16KB vector literal and we send the
+  // whole batch in one HTTP request to Neon.
+  const INSERT_BATCH = 100;
+  for (let i = 0; i < chunks.length; i += INSERT_BATCH) {
+    const sliceChunks = chunks.slice(i, i + INSERT_BATCH);
+    const rows = sliceChunks.map((c, j) => [
+      documentId,
+      userId,
+      c.chunkIndex,
+      c.pageStart ?? null,
+      c.pageEnd ?? null,
+      c.text,
+      c.heading ?? null,
+      c.charOffset ?? null,
+      c.tokenCount ?? null,
+      toVectorLiteral(vectors[i + j]),
+    ]);
+    const { text, params } = buildValues(rows, [
+      "", "", "", "", "", "", "", "", "", "::vector(1536)",
+    ]);
+    try {
+      await sql.query(
+        `insert into passages (
+          document_id, user_id, chunk_index, page_start, page_end,
+          text, heading, char_offset, token_count, embedding
+        ) values ${text}`,
+        params
+      );
+    } catch (err) {
+      throw new Error(
+        `embedDocument: passages insert failed at batch ${i} — ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 
   // 4. Flip the feature flag.
-  const { error: flagErr } = await sb
-    .from("documents")
-    .update({ has_passages: true })
-    .eq("id", documentId)
-    .eq("user_id", userId);
-  if (flagErr) {
+  try {
+    await sql`
+      update documents set has_passages = true
+      where id = ${documentId} and user_id = ${userId}
+    `;
+  } catch (err) {
     console.warn(
-      `[embed] ${documentId}: passages inserted but has_passages flip failed — ${flagErr.message}`
+      `[embed] ${documentId}: passages inserted but has_passages flip failed — ${err instanceof Error ? err.message : String(err)}`
     );
   }
 

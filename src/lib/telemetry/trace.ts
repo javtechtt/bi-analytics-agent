@@ -19,7 +19,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toJsonb } from "@/lib/db";
 import { computeCostUsd } from "./cost";
 
 // ── Trace context ────────────────────────────────────────
@@ -79,19 +79,17 @@ export async function beginToolCall(input: BeginToolCallInput): Promise<ToolCall
   const traceId = ctx?.traceId ?? randomUUID();
   const id = randomUUID();
   try {
-    const sb = createServerSupabase();
-    await sb.from("tool_calls").insert({
-      id,
-      trace_id: traceId,
-      session_id: ctx?.sessionId ?? null,
-      document_id: ctx?.documentId ?? null,
-      user_id: ctx?.userId ?? null,
-      tool_name: input.toolName,
-      args: input.args ?? null,
-      status: "pending",
-      eval_run_id: ctx?.evalRunId ?? null,
-      eval_question_id: ctx?.evalQuestionId ?? null,
-    });
+    const sql = getSql();
+    await sql`
+      insert into tool_calls (
+        id, trace_id, session_id, document_id, user_id, tool_name, args,
+        status, eval_run_id, eval_question_id
+      ) values (
+        ${id}, ${traceId}, ${ctx?.sessionId ?? null}, ${ctx?.documentId ?? null},
+        ${ctx?.userId ?? null}, ${input.toolName}, ${toJsonb(input.args ?? null)}::jsonb,
+        'pending', ${ctx?.evalRunId ?? null}, ${ctx?.evalQuestionId ?? null}
+      )
+    `;
   } catch (err) {
     console.warn("[telemetry/trace] beginToolCall insert failed:", err instanceof Error ? err.message : err);
   }
@@ -109,18 +107,17 @@ export interface EndToolCallInput {
 
 export async function endToolCall(input: EndToolCallInput): Promise<void> {
   try {
-    const sb = createServerSupabase();
-    await sb
-      .from("tool_calls")
-      .update({
-        status: input.status,
-        completed_at: new Date().toISOString(),
-        duration_ms: input.durationMs,
-        result_summary: input.resultSummary ?? null,
-        error: input.error ?? null,
-        total_cost_usd: input.totalCostUsd ?? null,
-      })
-      .eq("id", input.handle.id);
+    const sql = getSql();
+    await sql`
+      update tool_calls set
+        status = ${input.status},
+        completed_at = now(),
+        duration_ms = ${input.durationMs},
+        result_summary = ${toJsonb(input.resultSummary ?? null)}::jsonb,
+        error = ${input.error ?? null},
+        total_cost_usd = ${input.totalCostUsd ?? null}
+      where id = ${input.handle.id}
+    `;
   } catch (err) {
     console.warn("[telemetry/trace] endToolCall update failed:", err instanceof Error ? err.message : err);
   }
@@ -186,21 +183,19 @@ export async function recordLlmCall(input: RecordLlmCallInput): Promise<number |
   }
   const write = (async () => {
     try {
-      const sb = createServerSupabase();
-      await sb.from("llm_calls").insert({
-        trace_id: ctx.traceId,
-        tool_call_id: ctx.toolCallId ?? null,
-        operation: input.operation,
-        model: input.model,
-        input_tokens: input.inputTokens,
-        output_tokens: input.outputTokens,
-        cost_usd: cost,
-        latency_ms: input.latencyMs,
-        status: input.status ?? "success",
-        error: input.error ?? null,
-        prompt_chars: input.promptChars ?? null,
-        response_chars: input.responseChars ?? null,
-      });
+      const sql = getSql();
+      // total_tokens is a generated column — never insert it.
+      await sql`
+        insert into llm_calls (
+          trace_id, tool_call_id, operation, model, input_tokens, output_tokens,
+          cost_usd, latency_ms, status, error, prompt_chars, response_chars
+        ) values (
+          ${ctx.traceId}, ${ctx.toolCallId ?? null}, ${input.operation}, ${input.model},
+          ${input.inputTokens}, ${input.outputTokens}, ${cost}, ${input.latencyMs},
+          ${input.status ?? "success"}, ${input.error ?? null},
+          ${input.promptChars ?? null}, ${input.responseChars ?? null}
+        )
+      `;
     } catch (err) {
       console.warn("[telemetry/trace] recordLlmCall insert failed:", err instanceof Error ? err.message : err);
     }
@@ -216,12 +211,11 @@ export async function recordLlmCall(input: RecordLlmCallInput): Promise<number |
  */
 export async function totalCostForTraceId(traceId: string): Promise<number | null> {
   try {
-    const sb = createServerSupabase();
-    const { data, error } = await sb
-      .from("llm_calls")
-      .select("cost_usd")
-      .eq("trace_id", traceId);
-    if (error || !data) return null;
+    const sql = getSql();
+    const data = (await sql`
+      select cost_usd from llm_calls where trace_id = ${traceId}
+    `) as Array<{ cost_usd: string | number | null }>;
+    if (!data) return null;
     let total = 0;
     let any = false;
     for (const row of data) {
@@ -289,12 +283,11 @@ export async function instrumented<T extends { usage?: { prompt_tokens?: number;
  */
 export async function totalCostForToolCall(toolCallId: string): Promise<number | null> {
   try {
-    const sb = createServerSupabase();
-    const { data, error } = await sb
-      .from("llm_calls")
-      .select("cost_usd")
-      .eq("tool_call_id", toolCallId);
-    if (error || !data) return null;
+    const sql = getSql();
+    const data = (await sql`
+      select cost_usd from llm_calls where tool_call_id = ${toolCallId}
+    `) as Array<{ cost_usd: string | number | null }>;
+    if (!data) return null;
     let total = 0;
     let any = false;
     for (const row of data) {

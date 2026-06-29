@@ -11,7 +11,7 @@
  * to a robust save-with-retry path.
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toJsonb } from "@/lib/db";
 import type { VisualScene } from "./scene-types";
 
 export interface SaveSceneInput {
@@ -27,22 +27,28 @@ export async function saveScene(input: SaveSceneInput): Promise<void> {
     return;
   }
   try {
-    const sb = createServerSupabase();
-    const { error } = await sb.from("scenes").upsert({
-      id: scene.id,
-      session_id: sessionId,
-      document_id: scene.documentId ?? null,
-      user_id: userId,
-      title: scene.title,
-      layout: scene.layout,
-      fragments: scene.fragments,
-      caption: scene.caption ?? null,
-      confidence: confidenceLabelToScore(scene.confidence),
-      drilldowns: scene.drilldowns ?? [],
-    });
-    if (error) {
-      console.warn("[scenes/store] save error:", error.message);
-    }
+    const sql = getSql();
+    await sql`
+      insert into scenes (
+        id, session_id, document_id, user_id, title, layout, fragments,
+        caption, confidence, drilldowns
+      ) values (
+        ${scene.id}, ${sessionId}, ${scene.documentId ?? null}, ${userId},
+        ${scene.title}, ${scene.layout}, ${toJsonb(scene.fragments)}::jsonb,
+        ${scene.caption ?? null}, ${confidenceLabelToScore(scene.confidence)},
+        ${toJsonb(scene.drilldowns ?? [])}::jsonb
+      )
+      on conflict (id) do update set
+        session_id = excluded.session_id,
+        document_id = excluded.document_id,
+        user_id = excluded.user_id,
+        title = excluded.title,
+        layout = excluded.layout,
+        fragments = excluded.fragments,
+        caption = excluded.caption,
+        confidence = excluded.confidence,
+        drilldowns = excluded.drilldowns
+    `;
   } catch (err) {
     console.warn("[scenes/store] save threw:", err instanceof Error ? err.message : err);
   }

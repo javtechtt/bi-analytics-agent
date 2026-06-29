@@ -22,7 +22,7 @@ Frontier-quality narrative Q&A via retrieval-augmented generation with multi-ste
 ## Tech Stack
 - Next.js 16.2.3 (Turbopack) + TypeScript + Tailwind v4 + React 19
 - OpenAI Realtime API (`gpt-realtime-1.5`) via WebRTC for voice; OpenAI Files API + chat completions for PDF vision; OpenAI Embeddings for RAG
-- Supabase Postgres + `pgvector` extension (HNSW index, cosine distance)
+- Neon Postgres (serverless, `@neondatabase/serverless` HTTP driver) + `pgvector` extension (HNSW index, cosine distance). Migrated off Supabase — Neon's free tier auto-resumes on query (no manual unpause). Single `DATABASE_URL`; all DB access via `src/lib/db.ts` (`getSql()`).
 - Clerk for auth
 - Recharts for charts, html-to-image for PNG export
 - `unpdf` for text-layer PDF extraction; `pdf-lib` for PDF page splitting (Phase 4)
@@ -107,13 +107,13 @@ src/
     │   ├── scene-types.ts                ← VisualScene, VisualFragment, all prop types
     │   ├── fragments.ts                  ← Fragment factory functions
     │   ├── composer.ts                   ← Rules engine — composeScene + composeSceneFromPassages
-    │   └── store.ts                      ← Optional Supabase persistence for scenes
+    │   └── store.ts                      ← Optional Neon persistence for scenes
+    ├── db.ts                             ← Neon SQL client (getSql) + helpers (toVectorLiteral, toJsonb, buildValues)
     ├── telemetry/
     │   ├── cost.ts                       ← Per-model pricing table + cost computation
     │   └── trace.ts                      ← AsyncLocalStorage trace context, recordLlmCall, instrumented()
     └── supabase/
-        ├── server.ts                     ← Service-role client
-        └── types.ts                      ← Db* row types + mappers
+        └── types.ts                      ← Db* row types + mappers (kept path; no Supabase dep)
 
 evals/
 ├── golden/*.json                         ← 29 questions across 6 fixtures (narrative-only in v1)
@@ -246,20 +246,19 @@ npm run eval -- --id=msa-parties-01         # single question
 ## Backfill / Migration Workflow
 
 ```bash
-# Apply new migrations in Supabase SQL editor (in order):
-#   0001_phase1_documents.sql
-#   0002_phase3_scenes.sql
-#   0003_phase0_telemetry.sql
-#   0004_phase1_passages.sql
+# One-time DB setup on a fresh Neon project: apply the consolidated schema
+# (replaces the old Supabase SQL editor + supabase/migrations/*.sql flow).
+#   psql "$DATABASE_URL" -f neon-schema.sql
+# (or paste neon-schema.sql into the Neon console SQL editor). Idempotent.
 
-# After 0004, embed any existing narrative documents that pre-date the RAG rollout:
+# Embed any existing narrative documents that lack passages:
 npm run backfill:embed                 # all narrative docs without passages
 npm run backfill:embed -- --user=<id>  # scope to a user
 npm run backfill:embed -- --force      # re-embed already-embedded docs
 ```
 
 ## Security Model
-See [docs/security.md](docs/security.md). Five layers against prompt injection: pattern detector → role isolation → defensive framing → always-on system rule → verifier as final check. Cross-user isolation via Supabase RLS (service-role API + manual `user_id` filtering at every query, anon key denied at table level).
+See [docs/security.md](docs/security.md). Five layers against prompt injection: pattern detector → role isolation → defensive framing → always-on system rule → verifier as final check. Cross-user isolation is enforced by manual `user_id` filtering in every query (the Neon connection is server-only; there is no browser-exposed anon key / PostgREST surface, so the old "RLS-with-no-policies" trick is no longer needed).
 
 ## What's NOT Implemented Yet
 - **Per-user cost budgets**: dollar caps + enforcement. Skipped because this is a personal project — easy to add via a `budgets/check.ts` helper called from `tools/execute/route.ts` if needed.

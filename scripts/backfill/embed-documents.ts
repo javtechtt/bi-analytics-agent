@@ -20,7 +20,7 @@
  *   npx tsx --env-file=.env.local scripts/backfill/embed-documents.ts --force   (re-embed already-embedded docs)
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 import { embedDocument } from "@/lib/retrieval/embed";
 import { isNarrativeType } from "@/lib/ingestion/classifier";
 import type { DocumentExtraction } from "@/lib/documents/types";
@@ -52,26 +52,37 @@ async function main(): Promise<void> {
     console.error("[backfill] OPENAI_API_KEY is not set. Aborting.");
     process.exit(1);
   }
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("[backfill] SUPABASE_SERVICE_ROLE_KEY is not set. Aborting.");
+  if (!process.env.DATABASE_URL) {
+    console.error("[backfill] DATABASE_URL is not set. Aborting.");
     process.exit(1);
   }
 
   const opts = parseCli(process.argv);
-  const sb = createServerSupabase();
+  const sql = getSql();
 
-  let q = sb
-    .from("documents")
-    .select("id, user_id, type, extraction, has_passages")
-    .order("created_at", { ascending: true });
+  type Row = {
+    id: string;
+    user_id: string;
+    type: string;
+    extraction: DocumentExtraction & { sourceFileName?: string };
+    has_passages: boolean;
+  };
 
-  if (opts.user) q = q.eq("user_id", opts.user);
-  if (opts.document) q = q.eq("id", opts.document);
-  if (!opts.force) q = q.eq("has_passages", false);
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (opts.user) { params.push(opts.user); conds.push(`user_id = $${params.length}`); }
+  if (opts.document) { params.push(opts.document); conds.push(`id = $${params.length}`); }
+  if (!opts.force) { params.push(false); conds.push(`has_passages = $${params.length}`); }
+  const where = conds.length ? `where ${conds.join(" and ")}` : "";
 
-  const { data, error } = await q;
-  if (error) {
-    console.error("[backfill] Failed to fetch documents:", error.message);
+  let data: Row[];
+  try {
+    data = (await sql.query(
+      `select id, user_id, type, extraction, has_passages from documents ${where} order by created_at asc`,
+      params
+    )) as Row[];
+  } catch (err) {
+    console.error("[backfill] Failed to fetch documents:", err instanceof Error ? err.message : err);
     process.exit(1);
   }
   if (!data || data.length === 0) {
@@ -80,14 +91,7 @@ async function main(): Promise<void> {
   }
 
   // Filter to narrative docs with pageTexts.
-  type Row = {
-    id: string;
-    user_id: string;
-    type: string;
-    extraction: DocumentExtraction & { sourceFileName?: string };
-    has_passages: boolean;
-  };
-  const rows = (data as Row[]).filter((r) => {
+  const rows = data.filter((r) => {
     if (!isNarrativeType(r.type as Parameters<typeof isNarrativeType>[0])) return false;
     const pageTexts = r.extraction?.pageTexts;
     return Array.isArray(pageTexts) && pageTexts.length > 0;

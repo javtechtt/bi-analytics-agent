@@ -1,20 +1,25 @@
 import { auth } from "@clerk/nextjs/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 import { getAuthUser } from "@/lib/auth";
 
-/** Ensure user row exists in Supabase (upsert from Clerk). */
+/** Ensure user row exists (upsert from Clerk). */
 async function ensureUser(userId: string) {
-  const sb = createServerSupabase();
-  const { data: existing } = await sb.from("users").select("id").eq("id", userId).single();
-  if (existing) return;
+  const sql = getSql();
+  const existing = (await sql`select id from users where id = ${userId}`) as Array<{ id: string }>;
+  if (existing.length > 0) return;
 
   const profile = await getAuthUser();
-  await sb.from("users").upsert({
-    id: userId,
-    email: profile?.email ?? null,
-    display_name: profile?.displayName ?? null,
-    avatar_url: profile?.avatarUrl ?? null,
-  });
+  await sql`
+    insert into users (id, email, display_name, avatar_url)
+    values (
+      ${userId}, ${profile?.email ?? null}, ${profile?.displayName ?? null},
+      ${profile?.avatarUrl ?? null}
+    )
+    on conflict (id) do update set
+      email = excluded.email,
+      display_name = excluded.display_name,
+      avatar_url = excluded.avatar_url
+  `;
 }
 
 /** GET /api/workspace/sessions — list sessions or get active session */
@@ -22,22 +27,22 @@ export async function GET() {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const sb = createServerSupabase();
-
-  // Get the most recent active session with file count
-  const { data: sessions, error } = await sb
-    .from("sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(20);
-
-  if (error) {
-    console.error("[workspace/sessions] GET error:", error);
-    return Response.json({ error: error.message }, { status: 500 });
+  const sql = getSql();
+  try {
+    const sessions = await sql`
+      select * from sessions
+      where user_id = ${userId}
+      order by updated_at desc
+      limit 20
+    `;
+    return Response.json({ sessions: sessions ?? [] });
+  } catch (err) {
+    console.error("[workspace/sessions] GET error:", err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : "list failed" },
+      { status: 500 }
+    );
   }
-
-  return Response.json({ sessions: sessions ?? [] });
 }
 
 /** POST /api/workspace/sessions — create a new session */
@@ -52,31 +57,31 @@ export async function POST(request: Request) {
     outputMode?: string;
   };
 
-  const sb = createServerSupabase();
+  const sql = getSql();
 
-  // Deactivate any existing active sessions
-  await sb
-    .from("sessions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("is_active", true);
+  try {
+    // Deactivate any existing active sessions
+    await sql`
+      update sessions set is_active = false, updated_at = now()
+      where user_id = ${userId} and is_active = true
+    `;
 
-  // Create new session
-  const { data: session, error } = await sb
-    .from("sessions")
-    .insert({
-      user_id: userId,
-      title: body.title ?? "Untitled Session",
-      output_mode: body.outputMode ?? "executive",
-      is_active: true,
-    })
-    .select()
-    .single();
+    // Create new session
+    const rows = (await sql`
+      insert into sessions (user_id, title, output_mode, is_active)
+      values (
+        ${userId}, ${body.title ?? "Untitled Session"},
+        ${body.outputMode ?? "executive"}, true
+      )
+      returning *
+    `) as Array<Record<string, unknown>>;
 
-  if (error) {
-    console.error("[workspace/sessions] POST error:", error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ session: rows[0] });
+  } catch (err) {
+    console.error("[workspace/sessions] POST error:", err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : "create failed" },
+      { status: 500 }
+    );
   }
-
-  return Response.json({ session });
 }

@@ -9,7 +9,7 @@
  * the actual passage text — there is NO eager fact extraction in this path.
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toVectorLiteral } from "@/lib/db";
 import { embedQuery } from "./embed";
 
 const DEFAULT_K = 12;
@@ -50,22 +50,7 @@ export async function retrievePassages(input: RetrievalInput): Promise<Retrieval
   // 1. Embed the question.
   const queryEmbedding = await embedQuery(query);
 
-  // 2. RPC into pgvector for cosine top-K.
-  const sb = createServerSupabase();
-  const { data, error } = await sb.rpc("match_passages", {
-    p_document_id: documentId,
-    p_user_id: userId,
-    p_query_embedding: queryEmbedding as unknown as string,   // supabase-js accepts arrays for vector via implicit cast
-    p_match_count: k,
-  });
-
-  if (error) {
-    throw new Error(`retrievePassages: RPC failed — ${error.message}`);
-  }
-  if (!data || !Array.isArray(data)) {
-    return { passages: [], embedCostUsd: null };
-  }
-
+  // 2. Cosine top-K via the match_passages SQL function (uses the HNSW index).
   type RpcRow = {
     passage_id: string;
     chunk_index: number;
@@ -76,7 +61,28 @@ export async function retrievePassages(input: RetrievalInput): Promise<Retrieval
     similarity: number;
   };
 
-  const passages: Passage[] = (data as RpcRow[]).map((row) => ({
+  const sql = getSql();
+  let data: RpcRow[];
+  try {
+    data = (await sql`
+      select *
+      from match_passages(
+        ${documentId}::uuid,
+        ${userId},
+        ${toVectorLiteral(queryEmbedding)}::vector(1536),
+        ${k}
+      )
+    `) as RpcRow[];
+  } catch (err) {
+    throw new Error(
+      `retrievePassages: query failed — ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    return { passages: [], embedCostUsd: null };
+  }
+
+  const passages: Passage[] = data.map((row) => ({
     passageId: row.passage_id,
     chunkIndex: row.chunk_index,
     pageStart: row.page_start,

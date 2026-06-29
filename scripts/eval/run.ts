@@ -86,13 +86,19 @@ function parseCli(argv: string[]): CliOpts {
 }
 
 async function resetEvalUserData(userId: string): Promise<void> {
-  const { createServerSupabase } = await import("@/lib/supabase/server");
-  const sb = createServerSupabase();
+  const { getSql } = await import("@/lib/db");
+  const sql = getSql();
   console.log(`[eval] --reset: purging cached data for user ${userId}…`);
-  const passages = await sb.from("passages").delete().eq("user_id", userId);
-  if (passages.error) console.warn(`  passages purge warning: ${passages.error.message}`);
-  const docs = await sb.from("documents").delete().eq("user_id", userId);
-  if (docs.error) console.warn(`  documents purge warning: ${docs.error.message}`);
+  try {
+    await sql`delete from passages where user_id = ${userId}`;
+  } catch (err) {
+    console.warn(`  passages purge warning: ${err instanceof Error ? err.message : err}`);
+  }
+  try {
+    await sql`delete from documents where user_id = ${userId}`;
+  } catch (err) {
+    console.warn(`  documents purge warning: ${err instanceof Error ? err.message : err}`);
+  }
   console.log(`[eval] reset done — next upload will re-process every fixture.`);
 }
 
@@ -153,14 +159,12 @@ async function uploadFixture(
       cached.extraction.pageTexts &&
       cached.extraction.pageTexts.length > 0
     ) {
-      const { createServerSupabase } = await import("@/lib/supabase/server");
-      const sb = createServerSupabase();
-      const { data: docRow } = await sb
-        .from("documents")
-        .select("has_passages")
-        .eq("id", cached.documentId)
-        .maybeSingle();
-      if (docRow?.has_passages !== true) {
+      const { getSql } = await import("@/lib/db");
+      const sql = getSql();
+      const docRows = (await sql`
+        select has_passages from documents where id = ${cached.documentId} limit 1
+      `) as Array<{ has_passages: boolean }>;
+      if (docRows[0]?.has_passages !== true) {
         console.log(`[eval] cached fixture ${fixtureFile} not embedded yet — embedding now...`);
         try {
           const embedResult = await embedDocument({

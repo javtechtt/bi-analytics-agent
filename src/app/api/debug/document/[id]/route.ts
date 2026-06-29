@@ -11,8 +11,7 @@
  *   - Where is the cost going? Which model/operation dominated?
  *
  * Auth model: the document's owner. There is no admin role — userId from
- * Clerk auth must match the document's user_id, and RLS would block the
- * read anyway. No service-role bypass.
+ * Clerk auth must match the document's user_id (filtered in every query).
  *
  * Body shape is JSON for easy curl/jq inspection. Passage text is truncated
  * to 200 chars per row to keep payloads small; the full passage text is
@@ -20,7 +19,7 @@
  */
 
 import { auth } from "@clerk/nextjs/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -28,25 +27,59 @@ const PASSAGE_TEXT_PREVIEW_CHARS = 200;
 const RECENT_TOOL_CALLS_LIMIT = 20;
 const PASSAGE_SAMPLE_LIMIT = 50;
 
+interface DocRow {
+  id: string;
+  file_id: string | null;
+  session_id: string | null;
+  type: string;
+  subtype: string | null;
+  language: string;
+  status: string;
+  has_passages: boolean;
+  overall_confidence: string | number | null;
+  grounding_ratio: string | number | null;
+  classifier_confidence: string | number | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  extraction: {
+    extractionMethod?: string;
+    type?: string;
+    subtype?: string;
+    sourceFileName?: string;
+    confidence?: number;
+    groundingRatio?: number;
+    pageTexts?: unknown[];
+    facts?: unknown[];
+    entities?: unknown[];
+    metrics?: unknown[];
+  } | null;
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
-  const sb = createServerSupabase();
+  const sql = getSql();
 
   // 1. Document metadata — also serves as ownership check.
-  const { data: doc, error: docErr } = await sb
-    .from("documents")
-    .select(
-      "id, file_id, session_id, type, subtype, language, status, has_passages, overall_confidence, grounding_ratio, classifier_confidence, error, created_at, updated_at, extraction"
-    )
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (docErr) {
-    return Response.json({ error: docErr.message }, { status: 500 });
+  let doc: DocRow | undefined;
+  try {
+    const rows = (await sql`
+      select id, file_id, session_id, type, subtype, language, status,
+             has_passages, overall_confidence, grounding_ratio,
+             classifier_confidence, error, created_at, updated_at, extraction
+      from documents
+      where id = ${id} and user_id = ${userId}
+      limit 1
+    `) as DocRow[];
+    doc = rows[0];
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "query failed" },
+      { status: 500 }
+    );
   }
   if (!doc) {
     return Response.json({ error: "Document not found" }, { status: 404 });
@@ -70,21 +103,28 @@ export async function GET(_request: Request, context: RouteContext) {
     : null;
 
   // 2. Passage stats + sample.
-  const { count: passageCount } = await sb
-    .from("passages")
-    .select("id", { count: "exact", head: true })
-    .eq("document_id", id)
-    .eq("user_id", userId);
+  const countRows = (await sql`
+    select count(*)::int as count from passages
+    where document_id = ${id} and user_id = ${userId}
+  `) as Array<{ count: number }>;
+  const passageCount = countRows[0]?.count ?? 0;
 
-  const { data: passageSample } = await sb
-    .from("passages")
-    .select("id, chunk_index, page_start, page_end, heading, text, token_count")
-    .eq("document_id", id)
-    .eq("user_id", userId)
-    .order("chunk_index", { ascending: true })
-    .limit(PASSAGE_SAMPLE_LIMIT);
+  const passageSample = (await sql`
+    select id, chunk_index, page_start, page_end, heading, text, token_count
+    from passages
+    where document_id = ${id} and user_id = ${userId}
+    order by chunk_index asc
+    limit ${PASSAGE_SAMPLE_LIMIT}
+  `) as Array<{
+    chunk_index: number;
+    page_start: number | null;
+    page_end: number | null;
+    heading: string | null;
+    text: string;
+    token_count: number | null;
+  }>;
 
-  const passages = (passageSample ?? []).map((p) => ({
+  const passages = passageSample.map((p) => ({
     chunkIndex: p.chunk_index,
     pageStart: p.page_start,
     pageEnd: p.page_end,
@@ -97,17 +137,15 @@ export async function GET(_request: Request, context: RouteContext) {
   }));
 
   // Roll up token totals + page span across ALL passages (not just sample).
-  // Could be expensive on huge docs but our biggest is <1000 chunks.
-  const { data: passageRollupRows } = await sb
-    .from("passages")
-    .select("page_start, page_end, token_count")
-    .eq("document_id", id)
-    .eq("user_id", userId);
+  const passageRollupRows = (await sql`
+    select page_start, page_end, token_count from passages
+    where document_id = ${id} and user_id = ${userId}
+  `) as Array<{ page_start: number | null; page_end: number | null; token_count: number | null }>;
 
   let totalTokens = 0;
   let minPage: number | null = null;
   let maxPage: number | null = null;
-  for (const row of passageRollupRows ?? []) {
+  for (const row of passageRollupRows) {
     if (row.token_count) totalTokens += row.token_count;
     if (row.page_start != null) {
       minPage = minPage == null ? row.page_start : Math.min(minPage, row.page_start);
@@ -118,18 +156,26 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   // 3. Recent tool_calls for this document.
-  const { data: toolCalls } = await sb
-    .from("tool_calls")
-    .select(
-      "id, trace_id, tool_name, status, duration_ms, total_cost_usd, error, args, created_at"
-    )
-    .eq("document_id", id)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(RECENT_TOOL_CALLS_LIMIT);
+  const toolCalls = (await sql`
+    select id, trace_id, tool_name, status, duration_ms, total_cost_usd, error, args, created_at
+    from tool_calls
+    where document_id = ${id} and user_id = ${userId}
+    order by created_at desc
+    limit ${RECENT_TOOL_CALLS_LIMIT}
+  `) as Array<{
+    id: string;
+    trace_id: string;
+    tool_name: string;
+    status: string;
+    duration_ms: number | null;
+    total_cost_usd: string | number | null;
+    error: string | null;
+    args: unknown;
+    created_at: string;
+  }>;
 
   // 4. LLM call cost rollup across this document's tool_calls.
-  const toolCallIds = (toolCalls ?? []).map((t) => t.id);
+  const toolCallIds = toolCalls.map((t) => t.id);
   let llmRollup: Array<{
     operation: string;
     model: string;
@@ -140,10 +186,17 @@ export async function GET(_request: Request, context: RouteContext) {
   }> = [];
 
   if (toolCallIds.length > 0) {
-    const { data: llmRows } = await sb
-      .from("llm_calls")
-      .select("operation, model, cost_usd, input_tokens, output_tokens")
-      .in("tool_call_id", toolCallIds);
+    const llmRows = (await sql`
+      select operation, model, cost_usd, input_tokens, output_tokens
+      from llm_calls
+      where tool_call_id = any(${toolCallIds}::uuid[])
+    `) as Array<{
+      operation: string;
+      model: string;
+      cost_usd: string | number | null;
+      input_tokens: number | null;
+      output_tokens: number | null;
+    }>;
 
     const grouped = new Map<
       string,
@@ -156,7 +209,7 @@ export async function GET(_request: Request, context: RouteContext) {
         totalOutputTokens: number;
       }
     >();
-    for (const row of llmRows ?? []) {
+    for (const row of llmRows) {
       const key = `${row.operation}::${row.model}`;
       const existing = grouped.get(key);
       if (existing) {
@@ -199,12 +252,12 @@ export async function GET(_request: Request, context: RouteContext) {
       extraction: extractionMeta,
     },
     passageStats: {
-      count: passageCount ?? 0,
+      count: passageCount,
       totalTokens,
       pageRange: minPage != null && maxPage != null ? { min: minPage, max: maxPage } : null,
     },
     passages,
-    recentToolCalls: (toolCalls ?? []).map((t) => ({
+    recentToolCalls: toolCalls.map((t) => ({
       id: t.id,
       traceId: t.trace_id,
       toolName: t.tool_name,

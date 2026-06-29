@@ -1,35 +1,26 @@
 import { auth } from "@clerk/nextjs/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-/** DELETE /api/workspace/files/[id] — remove file record + storage blob */
+/** DELETE /api/workspace/files/[id] — remove file record */
 export async function DELETE(_request: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
-  const sb = createServerSupabase();
+  const sql = getSql();
 
-  // Get the file to check ownership and storage path
-  const { data: file } = await sb
-    .from("files")
-    .select("id, user_id, storage_path")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
-
-  if (!file) {
+  // Ownership check, then delete. (No object storage is wired up, so there's
+  // no blob to remove — the record is the whole file.)
+  const rows = (await sql`
+    select id from files where id = ${id} and user_id = ${userId}
+  `) as Array<{ id: string }>;
+  if (rows.length === 0) {
     return Response.json({ error: "File not found" }, { status: 404 });
   }
 
-  // Delete from storage if path exists
-  if (file.storage_path) {
-    await sb.storage.from("user-files").remove([file.storage_path]);
-  }
-
-  // Delete the database record
-  await sb.from("files").delete().eq("id", id);
+  await sql`delete from files where id = ${id} and user_id = ${userId}`;
 
   return Response.json({ ok: true });
 }

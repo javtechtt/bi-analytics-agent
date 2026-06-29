@@ -19,7 +19,7 @@
  * trusts callers to pass an authenticated user_id.
  */
 
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toJsonb } from "@/lib/db";
 import type { DocumentExtraction, DocumentType } from "./types";
 
 interface CachedRecord {
@@ -56,30 +56,44 @@ export interface SaveDocumentInput {
  * documentId — re-saving updates the row (used when extraction completes).
  */
 export async function saveDocument(input: SaveDocumentInput): Promise<string> {
-  const sb = createServerSupabase();
+  const sql = getSql();
   const { documentId, userId, sessionId, fileId, fileName, extraction } = input;
 
-  const { error } = await sb
-    .from("documents")
-    .upsert({
-      id: documentId,
-      file_id: fileId,
-      session_id: sessionId,
-      user_id: userId,
-      type: extraction.type,
-      subtype: extraction.subtype ?? null,
-      language: extraction.language,
-      classifier_confidence: extraction.classifierConfidence,
-      status: "ready",
-      extraction: { ...extraction, documentId, sourceFileName: fileName },
-      overall_confidence: extraction.confidence,
-      grounding_ratio: extraction.groundingRatio,
-      error: null,
-    });
-
-  if (error) {
-    console.error("[documents/store] save error:", error);
-    throw new Error(`Failed to save document: ${error.message}`);
+  try {
+    // Idempotent on the documentId PK. On conflict we update everything
+    // EXCEPT has_passages, so re-saving an extraction never clears the
+    // embedding flag the retrieval layer set.
+    await sql`
+      insert into documents (
+        id, file_id, session_id, user_id, type, subtype, language,
+        classifier_confidence, status, extraction, overall_confidence,
+        grounding_ratio, error
+      ) values (
+        ${documentId}, ${fileId}, ${sessionId}, ${userId}, ${extraction.type},
+        ${extraction.subtype ?? null}, ${extraction.language},
+        ${extraction.classifierConfidence}, 'ready',
+        ${toJsonb({ ...extraction, documentId, sourceFileName: fileName })}::jsonb,
+        ${extraction.confidence}, ${extraction.groundingRatio}, ${null}
+      )
+      on conflict (id) do update set
+        file_id = excluded.file_id,
+        session_id = excluded.session_id,
+        user_id = excluded.user_id,
+        type = excluded.type,
+        subtype = excluded.subtype,
+        language = excluded.language,
+        classifier_confidence = excluded.classifier_confidence,
+        status = excluded.status,
+        extraction = excluded.extraction,
+        overall_confidence = excluded.overall_confidence,
+        grounding_ratio = excluded.grounding_ratio,
+        error = excluded.error
+    `;
+  } catch (err) {
+    console.error("[documents/store] save error:", err);
+    throw new Error(
+      `Failed to save document: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
   memCache.set(documentId, {
@@ -107,15 +121,21 @@ export async function getDocumentForExtraction(
   const cached = memCache.get(documentId);
   if (cached && cached.userId === userId && isFresh(cached)) return cached;
 
-  const sb = createServerSupabase();
-  const { data, error } = await sb
-    .from("documents")
-    .select("id, file_id, session_id, user_id, extraction")
-    .eq("id", documentId)
-    .eq("user_id", userId)
-    .single();
-
-  if (error || !data) return null;
+  const sql = getSql();
+  const rows = (await sql`
+    select id, file_id, session_id, user_id, extraction
+    from documents
+    where id = ${documentId} and user_id = ${userId}
+    limit 1
+  `) as Array<{
+    id: string;
+    file_id: string | null;
+    session_id: string | null;
+    user_id: string;
+    extraction: unknown;
+  }>;
+  const data = rows[0];
+  if (!data) return null;
 
   const extraction = data.extraction as DocumentExtraction & { sourceFileName?: string };
   const record: CachedRecord = {
@@ -163,17 +183,27 @@ export async function findDocumentByFileName(
     if (rec.fileName.toLowerCase() === lower) return rec;
   }
 
-  const sb = createServerSupabase();
-  const { data, error } = await sb
-    .from("documents")
-    .select("id, file_id, session_id, user_id, extraction")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error || !data) return null;
-
-  type Row = (typeof data)[number];
+  const sql = getSql();
+  type Row = {
+    id: string;
+    file_id: string | null;
+    session_id: string | null;
+    user_id: string;
+    extraction: unknown;
+  };
+  let data: Row[];
+  try {
+    data = (await sql`
+      select id, file_id, session_id, user_id, extraction
+      from documents
+      where user_id = ${userId}
+      order by created_at desc
+      limit 50
+    `) as Row[];
+  } catch {
+    return null;
+  }
+  if (!data || data.length === 0) return null;
   const buildRecord = (row: Row, extraction: DocumentExtraction & { sourceFileName?: string }): CachedRecord => ({
     documentId: row.id,
     userId: row.user_id,
@@ -229,27 +259,27 @@ export async function updateDocumentExtraction(
   userId: string,
   next: DocumentExtraction
 ): Promise<void> {
-  const sb = createServerSupabase();
+  const sql = getSql();
   const cached = memCache.get(documentId);
 
-  const { error } = await sb
-    .from("documents")
-    .update({
-      extraction: {
-        ...next,
-        documentId,
-        sourceFileName: cached?.fileName ?? "(unknown)",
-      },
-      overall_confidence: next.confidence,
-      grounding_ratio: next.groundingRatio,
-      status: "ready",
-    })
-    .eq("id", documentId)
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("[documents/store] update error:", error);
-    throw new Error(`Failed to update document: ${error.message}`);
+  try {
+    await sql`
+      update documents set
+        extraction = ${toJsonb({
+          ...next,
+          documentId,
+          sourceFileName: cached?.fileName ?? "(unknown)",
+        })}::jsonb,
+        overall_confidence = ${next.confidence},
+        grounding_ratio = ${next.groundingRatio},
+        status = 'ready'
+      where id = ${documentId} and user_id = ${userId}
+    `;
+  } catch (err) {
+    console.error("[documents/store] update error:", err);
+    throw new Error(
+      `Failed to update document: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
   if (cached) {
@@ -275,14 +305,12 @@ export function stripServerOnlyFields(extraction: DocumentExtraction): DocumentE
  * null if the user has no session yet.
  */
 export async function findActiveSessionId(userId: string): Promise<string | null> {
-  const sb = createServerSupabase();
-  const { data } = await sb
-    .from("sessions")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data?.id ?? null;
+  const sql = getSql();
+  const rows = (await sql`
+    select id from sessions
+    where user_id = ${userId} and is_active = true
+    order by updated_at desc
+    limit 1
+  `) as Array<{ id: string }>;
+  return rows[0]?.id ?? null;
 }

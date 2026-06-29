@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql, toJsonb, buildValues } from "@/lib/db";
 import type { DbFile, DbMessage, DbChart, DbDashboard } from "@/lib/supabase/types";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -10,34 +10,31 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
-  const sb = createServerSupabase();
+  const sql = getSql();
 
   // Verify ownership
-  const { data: session } = await sb
-    .from("sessions")
-    .select("*")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
-
+  const sessionRows = (await sql`
+    select * from sessions where id = ${id} and user_id = ${userId}
+  `) as Array<Record<string, unknown>>;
+  const session = sessionRows[0];
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
   // Fetch all related data in parallel
-  const [filesRes, messagesRes, chartsRes, dashboardRes] = await Promise.all([
-    sb.from("files").select("*").eq("session_id", id).order("created_at"),
-    sb.from("messages").select("*").eq("session_id", id).order("timestamp"),
-    sb.from("charts").select("*").eq("session_id", id).order("position"),
-    sb.from("dashboards").select("*").eq("session_id", id).single(),
+  const [files, messages, charts, dashboards] = await Promise.all([
+    sql`select * from files where session_id = ${id} order by created_at`,
+    sql`select * from messages where session_id = ${id} order by timestamp`,
+    sql`select * from charts where session_id = ${id} order by position`,
+    sql`select * from dashboards where session_id = ${id} limit 1`,
   ]);
 
   return Response.json({
     session,
-    files: (filesRes.data ?? []) as DbFile[],
-    messages: (messagesRes.data ?? []) as DbMessage[],
-    charts: (chartsRes.data ?? []) as DbChart[],
-    dashboard: (dashboardRes.data as DbDashboard) ?? null,
+    files: files as DbFile[],
+    messages: messages as DbMessage[],
+    charts: charts as DbChart[],
+    dashboard: ((dashboards as DbDashboard[])[0]) ?? null,
   });
 }
 
@@ -47,17 +44,13 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
-  const sb = createServerSupabase();
+  const sql = getSql();
 
   // Verify ownership
-  const { data: session } = await sb
-    .from("sessions")
-    .select("id")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
-
-  if (!session) {
+  const ownRows = (await sql`
+    select id from sessions where id = ${id} and user_id = ${userId}
+  `) as Array<{ id: string }>;
+  if (ownRows.length === 0) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
@@ -76,63 +69,70 @@ export async function PUT(request: Request, context: RouteContext) {
     outputMode?: string;
   };
 
-  // Upsert messages
+  // Upsert messages (replace-all)
   if (body.messages && body.messages.length > 0) {
-    await sb.from("messages").delete().eq("session_id", id);
-    await sb.from("messages").insert(
-      body.messages.map((m) => ({
-        session_id: id,
-        external_id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-      }))
+    await sql`delete from messages where session_id = ${id}`;
+    const { text, params } = buildValues(
+      body.messages.map((m) => [id, m.id, m.role, m.content, m.timestamp])
+    );
+    await sql.query(
+      `insert into messages (session_id, external_id, role, content, timestamp) values ${text}`,
+      params
     );
   }
 
-  // Upsert charts
+  // Upsert charts (replace-all)
   if (body.charts && body.charts.length > 0) {
-    await sb.from("charts").delete().eq("session_id", id);
-    await sb.from("charts").insert(
-      body.charts.map((c, i) => ({
-        session_id: id,
-        external_id: c.id,
-        chart_type: c.chart_type,
-        title: c.title,
-        chart_data: c.data,
-        x_label: c.x_label ?? null,
-        y_label: c.y_label ?? null,
-        series: c.series ?? null,
-        coverage: c.coverage ?? null,
-        data_summary: c.dataSummary ?? null,
-        position: i,
-      }))
+    await sql`delete from charts where session_id = ${id}`;
+    const { text, params } = buildValues(
+      body.charts.map((c, i) => [
+        id,
+        c.id,
+        c.chart_type,
+        c.title,
+        toJsonb(c.data),
+        c.x_label ?? null,
+        c.y_label ?? null,
+        toJsonb(c.series ?? null),
+        c.coverage ?? null,
+        c.dataSummary ?? null,
+        i,
+      ]),
+      ["", "", "", "", "::jsonb", "", "", "::jsonb", "", "", ""]
+    );
+    await sql.query(
+      `insert into charts (
+        session_id, external_id, chart_type, title, chart_data, x_label,
+        y_label, series, coverage, data_summary, position
+      ) values ${text}`,
+      params
     );
   }
 
-  // Upsert dashboard
+  // Upsert dashboard (replace-all, one per session)
   if (body.dashboard !== undefined) {
-    await sb.from("dashboards").delete().eq("session_id", id);
+    await sql`delete from dashboards where session_id = ${id}`;
     if (body.dashboard) {
-      await sb.from("dashboards").insert({
-        session_id: id,
-        title: body.dashboard.title,
-        subtitle: body.dashboard.subtitle ?? null,
-        kpis: body.dashboard.kpis,
-        charts: body.dashboard.charts,
-        insights: body.dashboard.insights,
-        risks: body.dashboard.risks,
-        opportunities: body.dashboard.opportunities,
-        drilldowns: body.dashboard.drilldowns ?? [],
-      });
+      const d = body.dashboard;
+      await sql`
+        insert into dashboards (
+          session_id, title, subtitle, kpis, charts, insights, risks,
+          opportunities, drilldowns
+        ) values (
+          ${id}, ${d.title}, ${d.subtitle ?? null},
+          ${toJsonb(d.kpis)}::jsonb, ${toJsonb(d.charts)}::jsonb,
+          ${toJsonb(d.insights)}::jsonb, ${toJsonb(d.risks)}::jsonb,
+          ${toJsonb(d.opportunities)}::jsonb, ${toJsonb(d.drilldowns ?? [])}::jsonb
+        )
+      `;
     }
   }
 
   // Update session metadata
-  await sb.from("sessions").update({
-    output_mode: body.outputMode ?? "executive",
-    updated_at: new Date().toISOString(),
-  }).eq("id", id);
+  await sql`
+    update sessions set output_mode = ${body.outputMode ?? "executive"}, updated_at = now()
+    where id = ${id}
+  `;
 
   return Response.json({ ok: true });
 }
@@ -143,17 +143,16 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await context.params;
-  const sb = createServerSupabase();
+  const sql = getSql();
 
-  // Verify ownership then delete (cascade handles related records)
-  const { error } = await sb
-    .from("sessions")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+  // Cascade deletes related files/messages/charts/dashboards/documents/scenes.
+  try {
+    await sql`delete from sessions where id = ${id} and user_id = ${userId}`;
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "delete failed" },
+      { status: 500 }
+    );
   }
 
   return Response.json({ ok: true });

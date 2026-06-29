@@ -22,7 +22,7 @@
  */
 
 import { auth } from "@clerk/nextjs/server";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { getSql } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ traceId: string }> };
 
@@ -40,28 +40,35 @@ export async function GET(request: Request, context: RouteContext) {
   const url = new URL(request.url);
   const since = url.searchParams.get("since");
 
-  const sb = createServerSupabase();
-  let q = sb
-    .from("tool_progress")
-    .select("id, kind, message, created_at")
-    .eq("trace_id", traceId)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true })
-    .limit(MAX_ROWS_PER_POLL);
-
-  if (since) {
-    // Use gt rather than gte so the cursor advances cleanly — the row at
+  const sql = getSql();
+  type Row = { id: string; kind: string; message: string; created_at: string };
+  let data: Row[];
+  try {
+    // `since` uses gt (not gte) so the cursor advances cleanly — the row at
     // exactly `since` was already delivered last poll.
-    q = q.gt("created_at", since);
-  }
-
-  const { data, error } = await q;
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    data = (since
+      ? await sql`
+          select id, kind, message, created_at from tool_progress
+          where trace_id = ${traceId} and user_id = ${userId}
+            and created_at > ${since}
+          order by created_at asc
+          limit ${MAX_ROWS_PER_POLL}
+        `
+      : await sql`
+          select id, kind, message, created_at from tool_progress
+          where trace_id = ${traceId} and user_id = ${userId}
+          order by created_at asc
+          limit ${MAX_ROWS_PER_POLL}
+        `) as Row[];
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "poll failed" },
+      { status: 500 }
+    );
   }
 
   return Response.json({
-    events: (data ?? []).map((row) => ({
+    events: data.map((row) => ({
       id: row.id,
       kind: row.kind as "phase" | "info" | "warn",
       message: row.message,
