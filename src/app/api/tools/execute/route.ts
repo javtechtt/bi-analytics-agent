@@ -996,18 +996,14 @@ async function executeToolLogic(
           trend: "Summarize the document.",
         };
 
-        const { runQueryDocument } = await import("@/lib/extraction/query");
-        const queryResult = await runQueryDocument({
-          userId,
-          fileName: sceneFileName,
-          question: question ?? DEFAULT_QUESTIONS[intent] ?? "Summarize the document.",
-          focus,
-        });
+        const effectiveQuestion =
+          question ?? DEFAULT_QUESTIONS[intent] ?? "Summarize the document.";
 
-        const dr = queryResult.documentResponse;
-
-        const { composeScene } = await import("@/lib/visual/composer");
-        const intentToSceneIntent: Record<string, "overview" | "risk" | "timeline" | "metric" | "parties" | "obligations" | "trend" | "comparison" | "custom"> = {
+        const intentToSceneIntent: Record<
+          string,
+          | "overview" | "risk" | "timeline" | "metric" | "parties"
+          | "obligations" | "trend" | "comparison" | "custom"
+        > = {
           overview: "overview",
           risk: "risk",
           timeline: "timeline",
@@ -1018,22 +1014,79 @@ async function executeToolLogic(
           comparison: "comparison",
           custom: "custom",
         };
-        const sceneIntent = intentToSceneIntent[intent] ?? "overview";
 
-        const scene = composeScene({
-          intent: sceneIntent,
-          documentType: dr.documentType as import("@/lib/documents/types").DocumentType,
-          documentId: record.documentId,
-          fileName: sceneFileName,
-          question,
-          answer: dr.answer,
-          facts: dr.facts,
-          metrics: dr.metrics,
-          timeline: dr.timeline,
-          entities: dr.entities,
-          spans: dr.spans,
-          confidence: dr.confidence,
-        });
+        const { runQueryDocumentV2, FallbackToLegacyError } = await import("@/lib/retrieval/query");
+        const { composeScene, composeSceneFromVisualSpec } = await import("@/lib/visual/composer");
+
+        let scene: ReturnType<typeof composeSceneFromVisualSpec>;
+        let resultText: string;
+
+        try {
+          // Preferred path: RAG (high-quality retrieval) → Visual Extractor →
+          // a grounded chart/diagram. Wider retrieval than a pointed Q&A so a
+          // "chart the whole report" ask sees enough figures to work with.
+          const v2 = await runQueryDocumentV2({
+            userId,
+            fileName: sceneFileName,
+            question: effectiveQuestion,
+            focus,
+            retrievalK: 20,
+            rerankTopN: 10,
+          });
+          const dr = v2.documentResponse;
+          resultText = v2.result;
+
+          const { extractVisualSpec } = await import("@/lib/visual/extract");
+          const spec = await extractVisualSpec({
+            intent,
+            question: effectiveQuestion,
+            documentType: dr.documentType,
+            passages: dr.passages,
+          });
+          console.log(
+            `[compose_visual_scene] extractor → kind=${spec.kind} over ${dr.passages.length} passages`
+          );
+
+          scene = composeSceneFromVisualSpec({
+            spec,
+            fileName: sceneFileName,
+            documentId: record.documentId,
+            sessionId: record.sessionId ?? undefined,
+            documentType: dr.documentType,
+            question: effectiveQuestion,
+            answer: dr.answer,
+            confidence: dr.confidence,
+            passages: dr.passages,
+            citedPassageIds: dr.citations.map((c) => c.passageId),
+          });
+        } catch (v2Err) {
+          if (!(v2Err instanceof FallbackToLegacyError)) throw v2Err;
+          // Document isn't embedded — fall back to the legacy fact-graph path.
+          console.warn(`[compose_visual_scene] ${v2Err.message} — legacy fallback`);
+          const { runQueryDocument } = await import("@/lib/extraction/query");
+          const legacy = await runQueryDocument({
+            userId,
+            fileName: sceneFileName,
+            question: effectiveQuestion,
+            focus,
+          });
+          const dr = legacy.documentResponse;
+          resultText = legacy.result;
+          scene = composeScene({
+            intent: intentToSceneIntent[intent] ?? "overview",
+            documentType: dr.documentType as import("@/lib/documents/types").DocumentType,
+            documentId: record.documentId,
+            fileName: sceneFileName,
+            question,
+            answer: dr.answer,
+            facts: dr.facts,
+            metrics: dr.metrics,
+            timeline: dr.timeline,
+            entities: dr.entities,
+            spans: dr.spans,
+            confidence: dr.confidence,
+          });
+        }
 
         // Best-effort persistence — non-blocking.
         try {
@@ -1043,12 +1096,9 @@ async function executeToolLogic(
           console.warn("[tools/execute] scene save failed:", persistErr);
         }
 
-        // The realtime agent reads `result` aloud. The client bridge will
-        // append the `scene` to scenes state.
-        return Response.json({
-          result: queryResult.result,
-          scene,
-        });
+        // The realtime agent reads `result` aloud. The client bridge appends
+        // the `scene` to scenes state.
+        return Response.json({ result: resultText, scene });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "compose_visual_scene failed";
         console.error("[tools/execute] compose_visual_scene error:", msg);

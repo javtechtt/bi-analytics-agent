@@ -42,6 +42,7 @@ import {
   calloutFragment,
 } from "./fragments";
 import type { Fact, SourceSpan } from "@/lib/documents/types";
+import type { VisualSpec } from "./extract";
 
 let sceneCounter = 0;
 function nextSceneId(): string {
@@ -211,6 +212,292 @@ export function composeSceneFromPassages(
     confidence,
     createdAt: new Date().toISOString(),
   };
+}
+
+// ── Visual-spec composer (narrative charts via the Visual Extractor) ──
+
+export interface ComposeVisualSpecInput {
+  spec: VisualSpec;
+  fileName: string;
+  documentId?: string;
+  sessionId?: string;
+  documentType: string;
+  question?: string;
+  answer: string;
+  confidence: "high" | "medium" | "low";
+  passages: Array<{
+    passageId: string;
+    pageStart: number | null;
+    text: string;
+    heading: string | null;
+  }>;
+  citedPassageIds: string[];
+  drilldowns?: string[];
+}
+
+/**
+ * Build a scene from a grounded VisualSpec (produced by lib/visual/extract.ts).
+ * Phase 1 maps every spec kind to the best ALREADY-AVAILABLE renderer; the
+ * richer renderers (donut, treemap, radar, gauge, funnel, sankey, waterfall,
+ * risk-matrix grid) land in later phases and only swap the fragment chosen
+ * here — the extractor already emits their data.
+ */
+export function composeSceneFromVisualSpec(
+  input: ComposeVisualSpecInput
+): VisualScene {
+  const {
+    spec,
+    fileName,
+    documentId,
+    sessionId,
+    documentType,
+    question,
+    answer,
+    confidence,
+    passages,
+    citedPassageIds,
+    drilldowns,
+  } = input;
+
+  const fragments: VisualFragment[] = [];
+  let hasChart = false;
+
+  // 1. Summary anchor — matches the spoken answer.
+  fragments.push(
+    summaryFragment({
+      title:
+        question && question.length < 80
+          ? question
+          : spec.title && spec.kind !== "none"
+            ? spec.title
+            : "Findings",
+      body: answer,
+      confidence,
+    })
+  );
+
+  const seriesToData = (series: VisualSpec["series"]) =>
+    (series ?? []).map((s) => ({ label: s.label, value: s.value }));
+  const seriesToKpis = (series: VisualSpec["series"]) =>
+    (series ?? []).slice(0, 6).map((s) => ({
+      label: s.label,
+      value: formatChartValue(s.value, spec.unit),
+      column: s.label,
+      isPercent: spec.unit === "%" || spec.unit.toLowerCase() === "percent",
+      rawValue: s.value,
+    }));
+
+  // 2. The visual fragment(s) for the chosen kind.
+  switch (spec.kind) {
+    case "comparison":
+    case "funnel":
+    case "waterfall": {
+      if (spec.series && spec.series.length >= 2) {
+        fragments.push(kpiFragment({ cards: seriesToKpis(spec.series) }));
+        fragments.push(
+          chartFragment({
+            chart_type: "bar",
+            title: spec.title,
+            data: seriesToData(spec.series),
+            x_label: "",
+            y_label: spec.unit,
+            series: ["value"],
+          })
+        );
+        hasChart = true;
+      }
+      break;
+    }
+    case "trend": {
+      if (spec.series && spec.series.length >= 2) {
+        fragments.push(
+          chartFragment({
+            chart_type: "line",
+            title: spec.title,
+            data: seriesToData(spec.series),
+            x_label: "",
+            y_label: spec.unit,
+            series: ["value"],
+          })
+        );
+        hasChart = true;
+      }
+      break;
+    }
+    case "part_to_whole": {
+      if (spec.series && spec.series.length >= 2) {
+        fragments.push(kpiFragment({ cards: seriesToKpis(spec.series) }));
+        fragments.push(
+          chartFragment({
+            chart_type: "pie",
+            title: spec.title,
+            data: seriesToData(spec.series),
+            series: ["value"],
+          })
+        );
+        hasChart = true;
+      }
+      break;
+    }
+    case "radar": {
+      // No radar renderer yet — surface the axes as KPI cards.
+      if (spec.series && spec.series.length >= 2) {
+        fragments.push(kpiFragment({ cards: seriesToKpis(spec.series) }));
+      }
+      break;
+    }
+    case "sankey": {
+      // No sankey renderer yet — chart the flow magnitudes as a bar.
+      const flows = spec.flows ?? [];
+      if (flows.length >= 2) {
+        fragments.push(
+          chartFragment({
+            chart_type: "bar",
+            title: spec.title,
+            data: flows.map((f) => ({ label: `${f.source} → ${f.target}`, value: f.value })),
+            x_label: "",
+            y_label: spec.unit,
+            series: ["value"],
+          })
+        );
+        hasChart = true;
+      }
+      break;
+    }
+    case "gauge": {
+      const g = spec.gauge;
+      if (g) {
+        const cards = [
+          {
+            label: g.label,
+            value: formatChartValue(g.value, spec.unit),
+            column: g.label,
+            isPercent: spec.unit === "%",
+            rawValue: g.value,
+          },
+        ];
+        if (g.target != null) {
+          cards.push({
+            label: "Target",
+            value: formatChartValue(g.target, spec.unit),
+            column: "target",
+            isPercent: spec.unit === "%",
+            rawValue: g.target,
+          });
+        }
+        fragments.push(kpiFragment({ cards }));
+      }
+      break;
+    }
+    case "risk_matrix": {
+      const items = spec.riskItems ?? [];
+      if (items.length > 0) {
+        fragments.push(
+          riskPanelFragment({
+            title: spec.title || "Risk assessment",
+            risks: items.map((r) => ({
+              severity: riskSeverity(r.likelihood, r.impact),
+              title: r.title,
+              description: `Likelihood ${r.likelihood}/5 · Impact ${r.impact}/5`,
+              sourcePage: r.sourcePage ?? undefined,
+            })),
+          })
+        );
+      }
+      break;
+    }
+    case "timeline": {
+      const events = spec.events ?? [];
+      if (events.length > 0) {
+        fragments.push(
+          timelineFragment({
+            title: spec.title || "Timeline",
+            events: events.map((e) => ({
+              date: e.date,
+              label: e.label,
+              sourcePage: e.sourcePage ?? undefined,
+            })),
+          })
+        );
+      }
+      break;
+    }
+    case "entities": {
+      const ents = spec.entities ?? [];
+      if (ents.length > 0) {
+        fragments.push(
+          entityCardFragment({
+            title: spec.title || "Entities",
+            entities: ents.map((e) => ({
+              name: e.name,
+              type: e.type,
+              role: e.role ?? undefined,
+            })),
+          })
+        );
+      }
+      break;
+    }
+    case "none":
+    default:
+      break;
+  }
+
+  // 3. Takeaway callout from the spec, when present.
+  if (spec.caption && spec.caption.length > 0 && spec.kind !== "none") {
+    fragments.push(
+      calloutFragment({
+        tone: confidence === "low" ? "warning" : "info",
+        body: spec.caption,
+      })
+    );
+  }
+
+  // 4. Doc preview — cited passages first for grounding.
+  if (passages.length > 0 && documentId) {
+    const cited = new Set(citedPassageIds);
+    const citedFirst = passages.filter((p) => cited.has(p.passageId));
+    const others = passages
+      .filter((p) => !cited.has(p.passageId))
+      .slice(0, Math.max(0, 4 - citedFirst.length));
+    const ordered = [...citedFirst, ...others];
+    if (ordered.length > 0) {
+      fragments.push(
+        docPreviewFragment({
+          documentId,
+          fileName,
+          snippets: ordered.map((p) => ({
+            page: p.pageStart ?? undefined,
+            text: p.text.length > 320 ? p.text.slice(0, 317) + "…" : p.text,
+            highlight: cited.has(p.passageId),
+          })),
+        })
+      );
+    }
+  }
+
+  return {
+    id: nextSceneId(),
+    documentId,
+    sessionId,
+    title:
+      spec.title && spec.kind !== "none"
+        ? spec.title
+        : `${humanizeType(documentType)} · ${fileName}`,
+    layout: hasChart ? "spotlight" : "stack",
+    fragments,
+    caption: answer.length > 140 ? answer.slice(0, 137) + "…" : answer,
+    drilldowns,
+    confidence,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function riskSeverity(likelihood: number, impact: number): "high" | "medium" | "low" {
+  const score = likelihood * impact;
+  if (score >= 15) return "high";
+  if (score >= 8) return "medium";
+  return "low";
 }
 
 // ── Public composer ──────────────────────────────────────
